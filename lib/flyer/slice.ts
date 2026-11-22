@@ -460,7 +460,6 @@ export function flattenLayerTreeBottomToTop(
           if (groupCanvas) {
             stream.push({
               isPlaceholder: false,
-              layer,
               canvas: groupCanvas,
               opacity: layer.opacity ?? 1,
               blendMode: rawBlend,
@@ -527,15 +526,30 @@ function renderGroupCanvas(group: Layer, width: number, height: number): CanvasI
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // Children bottom to top
-  for (let i = group.children.length - 1; i >= 0; i--) {
-    const child = group.children[i];
-    if (child.hidden || !child.canvas) continue;
-    const left = child.left ?? 0;
-    const top = child.top ?? 0;
-    ctx.drawImage(child.canvas as any, left, top);
+  function drawLayers(target: CanvasRenderingContext2D, layers: Layer[]) {
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layer = layers[i];
+      if (layer.hidden) continue;
+
+      const layerCanvas = layer.children?.length
+        ? renderGroupCanvas(layer, width, height)
+        : layer.canvas;
+      if (!layerCanvas) continue;
+
+      target.save();
+      target.globalAlpha = layer.opacity ?? 1;
+      target.globalCompositeOperation =
+        SUPPORTED_BLEND_MODES[(layer.blendMode ?? "normal").toLowerCase()] ?? "source-over";
+      if (layer.children?.length) {
+        target.drawImage(layerCanvas as any, 0, 0);
+      } else {
+        target.drawImage(layerCanvas as any, layer.left ?? 0, layer.top ?? 0);
+      }
+      target.restore();
+    }
   }
 
+  drawLayers(ctx as CanvasRenderingContext2D, group.children);
   return canvas;
 }
 

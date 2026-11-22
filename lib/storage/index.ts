@@ -11,20 +11,25 @@ export * from "./local";
 
 let activeStorage: StorageService | null = null;
 
+export function getStorageDriver(
+  nodeEnv = process.env.NODE_ENV,
+  useMemoryStorage = process.env.USE_MEMORY_STORAGE === "true"
+): "memory" | "local" | "r2" {
+  if (nodeEnv === "test" || (nodeEnv !== "production" && useMemoryStorage)) {
+    return "memory";
+  }
+  return nodeEnv === "production" ? "r2" : "local";
+}
+
 export function getStorage(): StorageService {
   if (activeStorage) return activeStorage;
 
-  if (
-    process.env.NODE_ENV === "test" ||
-    process.env.USE_MEMORY_STORAGE === "true"
-  ) {
+  const driver = getStorageDriver();
+  if (driver === "memory") {
     activeStorage = new MemoryStorageService();
-  } else if (
-    process.env.STORAGE_DRIVER === "r2"
-  ) {
+  } else if (driver === "r2") {
     activeStorage = new R2StorageService();
   } else {
-    // Default to fast, local-first storage during creation and development
     activeStorage = new LocalStorageService();
   }
 

@@ -13,12 +13,17 @@ let activeStorage: StorageService | null = null;
 
 export function getStorageDriver(
   nodeEnv = process.env.NODE_ENV,
-  useMemoryStorage = process.env.USE_MEMORY_STORAGE === "true"
+  useMemoryStorage = process.env.USE_MEMORY_STORAGE === "true",
+  deploymentEnv = process.env.VERCEL_ENV
 ): "memory" | "local" | "r2" {
-  if (nodeEnv === "test" || (nodeEnv !== "production" && useMemoryStorage)) {
-    return "memory";
-  }
-  return nodeEnv === "production" ? "r2" : "local";
+  if (nodeEnv === "test") return "memory";
+
+  const isProduction = deploymentEnv
+    ? deploymentEnv === "production"
+    : nodeEnv === "production";
+
+  if (useMemoryStorage && !isProduction) return "memory";
+  return isProduction ? "r2" : "local";
 }
 
 export function getStorage(): StorageService {

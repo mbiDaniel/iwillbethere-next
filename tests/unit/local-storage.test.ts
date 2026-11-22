@@ -9,6 +9,8 @@ describe("Storage driver selection", () => {
     expect(getStorageDriver("development")).toBe("local");
     expect(getStorageDriver("production")).toBe("r2");
     expect(getStorageDriver("production", true)).toBe("r2");
+    expect(getStorageDriver("production", false, "preview")).toBe("local");
+    expect(getStorageDriver("production", false, "production")).toBe("r2");
   });
 
   it("uses memory storage for tests and explicit memory mode", () => {

@@ -28,7 +28,7 @@ import { inspectPsdLayersInWorker, runPsdSlicer } from "@/lib/flyer/worker-clien
 import type { ManualPlaceholderMapping, PsdLayerDescriptor } from "@/lib/flyer/detect";
 import { createFlattenedFallback, SlicerResult } from "@/lib/flyer/slice";
 import { uploadAssetsConcurrently } from "@/lib/flyer/uploader";
-import { FlyerManifest, SlicedAsset, ManifestPlaceholder, ManifestItem } from "@/lib/flyer/types";
+import { AssetRef, FlyerManifest, SlicedAsset, ManifestPlaceholder, ManifestItem } from "@/lib/flyer/types";
 
 const steps = ["Details", "Upload PSD", "Placeholders", "Review"];
 
@@ -256,39 +256,67 @@ export function Wizard() {
         },
       });
 
+      // Bind locally generated asset references to the version-scoped storage keys.
+      const uploadedKeys = new Map(
+        urlRes.data.uploadUrls.map((asset) => [
+          `${asset.kind}:${asset.tier}:${asset.sha256}`,
+          asset.key,
+        ])
+      );
+      const manifest = structuredClone(sliceResult.manifest);
+      const bindAssetRef = (kind: "slice" | "mask", tier: "preview" | "full", ref: AssetRef) => {
+        const key = uploadedKeys.get(`${kind}:${tier}:${ref.sha256}`);
+        if (!key) throw new Error(`Uploaded asset key not found for ${kind} ${tier} asset ${ref.sha256}`);
+        ref.key = key;
+        ref.url = `/api/public/assets/${key}`;
+      };
+
+      for (const item of manifest.items) {
+        if (item.kind === "slice") {
+          bindAssetRef("slice", "preview", item.assets.preview);
+          bindAssetRef("slice", "full", item.assets.full);
+        }
+      }
+      for (const placeholder of manifest.placeholders) {
+        if (placeholder.mask) {
+          bindAssetRef("mask", "preview", placeholder.mask.preview);
+          bindAssetRef("mask", "full", placeholder.mask.full);
+        }
+      }
+
       // Step 5: Commit version with manifest
       setProcessingStage("verifying");
       setStageProgressPercent(95);
 
       const commitRes = await commitVersion({
         versionId: newVersionId,
-        manifest: sliceResult.manifest,
+        manifest,
       });
 
       if (!commitRes.ok) {
         throw new Error(commitRes.error);
       }
 
-      setManifest(sliceResult.manifest);
+      setManifest(manifest);
       setValidationIssues(commitRes.data.issues || sliceResult.validationIssues || []);
 
       // Map placeholders to event state
-      const mappedPlaceholders: Placeholder[] = sliceResult.manifest.placeholders.map((p: ManifestPlaceholder) => ({
+      const mappedPlaceholders: Placeholder[] = manifest.placeholders.map((p: ManifestPlaceholder) => ({
         id: p.id,
         layerName: p.layerName,
         key: p.key,
         type: p.type,
         sampleValue: p.options.sampleValue,
         box: {
-          x: Number(((p.box.x / sliceResult.manifest.width) * 100).toFixed(2)),
-          y: Number(((p.box.y / sliceResult.manifest.height) * 100).toFixed(2)),
-          w: Number(((p.box.w / sliceResult.manifest.width) * 100).toFixed(2)),
-          h: Number(((p.box.h / sliceResult.manifest.height) * 100).toFixed(2)),
+          x: Number(((p.box.x / manifest.width) * 100).toFixed(2)),
+          y: Number(((p.box.y / manifest.height) * 100).toFixed(2)),
+          w: Number(((p.box.w / manifest.width) * 100).toFixed(2)),
+          h: Number(((p.box.h / manifest.height) * 100).toFixed(2)),
         },
         options: p.options as any,
       }));
 
-      const firstSlice = sliceResult.manifest.items.find((i: ManifestItem) => i.kind === "slice");
+      const firstSlice = manifest.items.find((i: ManifestItem) => i.kind === "slice");
       const previewUrl = firstSlice?.kind === "slice" ? firstSlice.assets.preview.url : null;
 
       change({

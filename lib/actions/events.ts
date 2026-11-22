@@ -19,7 +19,7 @@ import { enqueueJob } from "@/lib/queue";
 
 export async function createEvent(
   input: unknown
-): Promise<ActionResult<{ id: string; slug: string }>> {
+): Promise<ActionResult<{ id: string; slug: string; formatId: string }>> {
   try {
     const user = await requireUser();
     const parsed = createEventSchema.parse(input);
@@ -73,7 +73,7 @@ export async function createEvent(
       });
     });
 
-    return { ok: true, data: { id: eventId, slug } };
+    return { ok: true, data: { id: eventId, slug, formatId } };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed to create event";
     return { ok: false, error: msg };

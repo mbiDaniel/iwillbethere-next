@@ -14,6 +14,7 @@ import {
   DEFAULT_VALIDATION_CONFIG,
 } from "@/lib/flyer/validate";
 import { flyerManifestSchema } from "@/lib/flyer/types";
+import { flattenLayerTreeBottomToTop } from "@/lib/flyer/slice";
 
 describe("lib/flyer/canvas", () => {
   it("creates a canvas with dimensions and context", () => {
@@ -101,6 +102,72 @@ describe("lib/flyer/detect", () => {
     expect(detected[1].key).toBe("name");
     expect(detected[1].type).toBe("text");
     expect(detected[1].box).toEqual({ x: 50, y: 500, w: 400, h: 60 });
+  });
+
+  it("applies manual placeholder mappings to selected nested layers", () => {
+    const mockPsd: any = {
+      width: 400,
+      height: 400,
+      children: [
+        {
+          name: "Artwork",
+          children: [
+            {
+              name: "Untitled layer",
+              left: 30,
+              top: 50,
+              right: 230,
+              bottom: 150,
+            },
+          ],
+        },
+      ],
+    };
+
+    const detected = detectPlaceholders(mockPsd, "#PLACEHOLDER_", {
+      manualPlaceholders: [
+        { layerPath: "0.0", key: "GUEST PHOTO", type: "image" },
+      ],
+    });
+
+    expect(detected).toHaveLength(1);
+    expect(detected[0].key).toBe("GUEST PHOTO");
+    expect(detected[0].type).toBe("image");
+    expect(detected[0].layerName).toBe("Untitled layer");
+    expect(detected[0].box).toEqual({ x: 30, y: 50, w: 200, h: 100 });
+  });
+
+  it("turns manually selected layers into placeholder stream items", () => {
+    const mockPsd: any = {
+      width: 400,
+      height: 400,
+      children: [
+        {
+          name: "Artwork",
+          children: [
+            {
+              name: "Layer 1",
+              left: 30,
+              top: 50,
+              right: 230,
+              bottom: 150,
+            },
+          ],
+        },
+      ],
+    };
+
+    const stream = flattenLayerTreeBottomToTop(
+      mockPsd,
+      "#PLACEHOLDER_",
+      [],
+      [{ layerPath: "0.0", key: "GUEST_NAME", type: "text" }]
+    );
+
+    expect(stream).toHaveLength(1);
+    expect(stream[0].isPlaceholder).toBe(true);
+    expect(stream[0].placeholder?.key).toBe("GUEST_NAME");
+    expect(stream[0].placeholder?.type).toBe("text");
   });
 
   it("carries over existing designer overrides by matching key and type", () => {

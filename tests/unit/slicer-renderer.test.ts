@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
-import { slicePsd, preflightCheck, trimCanvas, createFlattenedFallback } from "@/lib/flyer/slice";
+import {
+  createFlattenedFallback,
+  inspectPsdLayers,
+  preflightCheck,
+  slicePsd,
+  trimCanvas,
+} from "@/lib/flyer/slice";
 import { renderFlyer, exportFlyer } from "@/lib/flyer/render";
 import { flyerManifestSchema } from "@/lib/flyer/types";
 import { createCanvas } from "@/lib/flyer/canvas";
@@ -90,6 +96,34 @@ describe("lib/flyer/slice & render integration", () => {
       expect(asset.sha256).toHaveLength(64);
       expect(asset.bytes).toBeGreaterThan(0);
     }
+  });
+
+  it("lets users map layers manually when a PSD has no placeholder tags", async () => {
+    const noPlaceholderPath = path.join(
+      process.cwd(),
+      "tests",
+      "fixtures",
+      "zero-placeholders.psd"
+    );
+    const noPlaceholderBuffer = fs.readFileSync(noPlaceholderPath);
+    const layers = inspectPsdLayers(noPlaceholderBuffer);
+
+    expect(layers.length).toBeGreaterThan(0);
+    expect(layers.some((layer) => layer.hasPlaceholderTag)).toBe(false);
+
+    const result = await slicePsd(noPlaceholderBuffer, {
+      manualPlaceholders: [
+        {
+          layerPath: layers[0].layerPath,
+          key: "GUEST_NAME",
+          type: "text",
+        },
+      ],
+    });
+
+    expect(result.manifest.placeholders).toHaveLength(1);
+    expect(result.manifest.placeholders[0].key).toBe("GUEST_NAME");
+    expect(result.validationIssues.some((issue) => issue.code === "ZERO_PLACEHOLDERS")).toBe(false);
   });
 
   it("renders guest flyer from sliced manifest and exported output", async () => {

@@ -7,11 +7,12 @@ import { CheckCircle2, RotateCw, AlertTriangle, XCircle, RefreshCw } from "lucid
 import { toast } from "sonner";
 import { dateLabel } from "@/lib/mock-data";
 import { FileDropzone } from "./files";
+import { ManualPlaceholderPicker } from "./manual-placeholder-picker";
 import { PlaceholderList } from "./placeholders";
 import { ShareLinkBox } from "./event-controls";
 import { FlyerPreview } from "./flyer";
 import type { Event, Placeholder } from "@/lib/types";
-import { createEvent, getEvent } from "@/lib/actions/events";
+import { createEvent } from "@/lib/actions/events";
 import {
   createVersion,
   createAssetUploadUrls,
@@ -23,7 +24,8 @@ import {
   getRescanSignedUrl,
 } from "@/lib/actions/psd";
 import { generateQrCodeSvg } from "@/lib/qr";
-import { runPsdSlicer } from "@/lib/flyer/worker-client";
+import { inspectPsdLayersInWorker, runPsdSlicer } from "@/lib/flyer/worker-client";
+import type { ManualPlaceholderMapping, PsdLayerDescriptor } from "@/lib/flyer/detect";
 import { createFlattenedFallback, SlicerResult } from "@/lib/flyer/slice";
 import { uploadAssetsConcurrently } from "@/lib/flyer/uploader";
 import { FlyerManifest, SlicedAsset, ManifestPlaceholder, ManifestItem } from "@/lib/flyer/types";
@@ -128,6 +130,12 @@ export function Wizard() {
   const [publishing, setPublishing] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const originalFileRef = useRef<File | null>(null);
+  const manualPlaceholdersRef = useRef<ManualPlaceholderMapping[]>([]);
+  const [pendingPsd, setPendingPsd] = useState<{
+    file: File;
+    layers: PsdLayerDescriptor[];
+  } | null>(null);
+  const [inspectingPsd, setInspectingPsd] = useState(false);
 
   const change = (v: Partial<Event>) => setEvent((prev) => ({ ...prev, ...v }));
 
@@ -140,12 +148,21 @@ export function Wizard() {
     setError("Upload cancelled by user.");
   };
 
-  const processPsdFile = async (f: File) => {
+  const processPsdFile = async (
+    f: File,
+    manualPlaceholders: ManualPlaceholderMapping[] = []
+  ) => {
     if (!f.name.toLowerCase().endsWith(".psd")) {
       setError("Please choose a Photoshop .psd file.");
       return;
     }
+    if (!event.id || !formatId) {
+      setError("The event format is not ready yet. Go back and try again.");
+      return;
+    }
 
+    setPendingPsd(null);
+    manualPlaceholdersRef.current = manualPlaceholders;
     originalFileRef.current = f;
     setError("");
     const abortCtrl = new AbortController();
@@ -176,7 +193,8 @@ export function Wizard() {
       // Step 2 & 3: Run client-side PSD slicing in Web Worker
       setProcessingStage("slicing");
       const sliceResult: SlicerResult = await runPsdSlicer(arrayBuffer, {
-        prefix: event.placeholders[0]?.key ? undefined : "#PLACEHOLDER_",
+        prefix: "#PLACEHOLDER_",
+        manualPlaceholders,
         onProgress: (st, pct) => {
           if (st === "detecting") setProcessingStage("detecting");
           else if (st === "slicing" || st === "encoding") setProcessingStage("slicing");
@@ -289,6 +307,38 @@ export function Wizard() {
       setProcessingStage("failed");
     } finally {
       abortControllerRef.current = null;
+    }
+  };
+
+  const handlePsdSelected = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".psd")) {
+      setError("Please choose a Photoshop .psd file.");
+      return;
+    }
+
+    setInspectingPsd(true);
+    setPendingPsd(null);
+    setError("");
+    try {
+      const buffer = await file.arrayBuffer();
+      const layers = await inspectPsdLayersInWorker(buffer);
+      if (layers.some((layer) => layer.hasPlaceholderTag)) {
+        setInspectingPsd(false);
+        await processPsdFile(file);
+      } else {
+        originalFileRef.current = file;
+        setPendingPsd({ file, layers });
+        setProcessingStage("idle");
+      }
+    } catch (inspectionError: unknown) {
+      setError(
+        inspectionError instanceof Error
+          ? inspectionError.message
+          : "Could not inspect PSD layers. Please try another file."
+      );
+      setProcessingStage("failed");
+    } finally {
+      setInspectingPsd(false);
     }
   };
 
@@ -420,11 +470,7 @@ export function Wizard() {
       }
 
       change({ id: res.data.id, slug: res.data.slug });
-
-      const full = await getEvent(res.data.id);
-      if (full?.formats[0]) {
-        setFormatId(full.formats[0].id);
-      }
+      setFormatId(res.data.formatId);
 
       setStep(1);
       return;
@@ -520,8 +566,20 @@ export function Wizard() {
               label="Choose or drop your PSD"
               accept=".psd"
               hint="Photoshop document (.psd) up to 100 MB"
-              onFile={processPsdFile}
+              onFile={handlePsdSelected}
             />
+            {inspectingPsd && (
+              <p role="status" className="hint">
+                Checking PSD layers…
+              </p>
+            )}
+            {pendingPsd && (
+              <ManualPlaceholderPicker
+                layers={pendingPsd.layers}
+                busy={processingStage !== "idle" && processingStage !== "failed"}
+                onStart={(mappings) => processPsdFile(pendingPsd.file, mappings)}
+              />
+            )}
 
             <div className="row spread" style={{ alignItems: "center", gap: "8px" }}>
               <button
@@ -585,7 +643,9 @@ export function Wizard() {
                     <button
                       type="button"
                       className="btn secondary small"
-                      onClick={() => processPsdFile(originalFileRef.current!)}
+                      onClick={() =>
+                        processPsdFile(originalFileRef.current!, manualPlaceholdersRef.current)
+                      }
                     >
                       <RefreshCw size={13} /> Retry
                     </button>

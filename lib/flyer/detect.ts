@@ -1,6 +1,22 @@
 import type { Layer, Psd } from "ag-psd";
 import { ManifestPlaceholder, PlaceholderOptions } from "./types";
 
+export interface ManualPlaceholderMapping {
+  layerPath: string;
+  key: string;
+  type: "text" | "image";
+}
+
+export interface PsdLayerDescriptor {
+  layerPath: string;
+  name: string;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  hasPlaceholderTag: boolean;
+}
+
 export interface DetectedPlaceholder {
   id: string;
   key: string;
@@ -71,31 +87,41 @@ export function getDefaultOptions(type: "text" | "image", key: string): Placehol
 export function detectPlaceholders(
   psd: Psd,
   prefix = "#PLACEHOLDER_",
-  options?: { caseSensitive?: boolean }
+  options?: {
+    caseSensitive?: boolean;
+    manualPlaceholders?: ManualPlaceholderMapping[];
+  }
 ): DetectedPlaceholder[] {
   const results: DetectedPlaceholder[] = [];
   const isCaseSensitive = options?.caseSensitive ?? true;
+  const manualMappings = new Map(
+    (options?.manualPlaceholders ?? []).map((mapping) => [mapping.layerPath, mapping])
+  );
 
   function traverse(
     layers: Layer[] | undefined,
     parentPath: string[],
-    parentOpacity: number
+    parentOpacity: number,
+    parentIndices: number[]
   ) {
     if (!layers || !Array.isArray(layers)) return;
 
-    for (const layer of layers) {
+    for (let index = 0; index < layers.length; index += 1) {
+      const layer = layers[index];
       if (layer.hidden) continue;
 
       const layerOpacity = (layer.opacity ?? 1) * parentOpacity;
       const layerName = layer.name ?? "";
+      const layerPath = [...parentIndices, index].join(".");
+      const manualMapping = manualMappings.get(layerPath);
       const matchesPrefix = isCaseSensitive
         ? layerName.startsWith(prefix)
         : layerName.toLowerCase().startsWith(prefix.toLowerCase());
 
-      if (matchesPrefix) {
-        const rawKey = layerName.slice(prefix.length);
+      if (matchesPrefix || manualMapping) {
+        const rawKey = manualMapping?.key ?? layerName.slice(prefix.length);
         const key = sanitizeKey(rawKey) || "placeholder";
-        const type = inferPlaceholderType(key);
+        const type = manualMapping?.type ?? inferPlaceholderType(key);
 
         const left = layer.left ?? 0;
         const top = layer.top ?? 0;
@@ -121,12 +147,12 @@ export function detectPlaceholders(
       }
 
       if (layer.children && Array.isArray(layer.children)) {
-        traverse(layer.children, [...parentPath, layerName], layerOpacity);
+        traverse(layer.children, [...parentPath, layerName], layerOpacity, [...parentIndices, index]);
       }
     }
   }
 
-  traverse(psd.children, [], 1.0);
+  traverse(psd.children, [], 1.0, []);
   return results;
 }
 

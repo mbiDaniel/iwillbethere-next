@@ -1,7 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { LocalStorageService } from "@/lib/storage/local";
+import { getStorageDriver } from "@/lib/storage";
 import fs from "fs";
 import path from "path";
+
+describe("Storage driver selection", () => {
+  it("uses local disk in development and R2 only in production", () => {
+    expect(getStorageDriver("development")).toBe("local");
+    expect(getStorageDriver("production")).toBe("r2");
+    expect(getStorageDriver("production", true)).toBe("r2");
+    expect(getStorageDriver("production", false, "preview")).toBe("local");
+    expect(getStorageDriver("production", false, "production")).toBe("r2");
+  });
+
+  it("uses memory storage for tests and explicit memory mode", () => {
+    expect(getStorageDriver("test")).toBe("memory");
+    expect(getStorageDriver("development", true)).toBe("memory");
+  });
+});
 
 describe("LocalStorageService", () => {
   const testDir = path.join(process.cwd(), ".uploads_test");

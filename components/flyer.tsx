@@ -1,7 +1,14 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import type { Event } from "@/lib/types";
 import { ImagePlus } from "lucide-react";
+import { FlyerManifest } from "@/lib/flyer/types";
+import { renderFlyer } from "@/lib/flyer/render";
+
 export function FlyerPreview({
   event,
+  manifest: propManifest,
   values = {},
   sample = false,
   highlighted,
@@ -9,23 +16,125 @@ export function FlyerPreview({
   onFocusField,
 }: {
   event: Event;
+  manifest?: FlyerManifest | null;
   values?: Record<string, string>;
   sample?: boolean;
   highlighted?: string;
   onSelect?: (id: string) => void;
   onFocusField?: (id: string) => void;
 }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [manifest, setManifest] = useState<FlyerManifest | null>(propManifest || null);
+  const [slicesLoaded, setSlicesLoaded] = useState(false);
+
+  // If manifestUrl is on event and no propManifest, load it
+  useEffect(() => {
+    if (propManifest) {
+      setManifest(propManifest);
+      return;
+    }
+    if (event.manifestUrl) {
+      fetch(event.manifestUrl)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && data.version === 1) {
+            setManifest(data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [propManifest, event.manifestUrl]);
+
+  // Load preview slices into memory and draw onto canvas
+  useEffect(() => {
+    if (!manifest || !canvasRef.current) return;
+
+    let cancelled = false;
+    const tier = manifest.tiers.preview;
+    const canvas = canvasRef.current;
+    canvas.width = tier.width;
+    canvas.height = tier.height;
+
+    const assetBitmaps = new Map<string, HTMLImageElement>();
+    const sliceItems = manifest.items.filter((i) => i.kind === "slice");
+
+    if (sliceItems.length === 0) return;
+
+    let loadedCount = 0;
+    const totalToLoad = sliceItems.length;
+
+    sliceItems.forEach((item) => {
+      if (item.kind !== "slice") return;
+      const ref = item.assets.preview;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        if (cancelled) return;
+        assetBitmaps.set(ref.key, img);
+        assetBitmaps.set(ref.url, img);
+        assetBitmaps.set(ref.sha256, img);
+        loadedCount++;
+
+        if (loadedCount === totalToLoad) {
+          // Render only slices onto this background canvas
+          renderFlyer(
+            {
+              manifest: {
+                ...manifest,
+                placeholders: [], // do not draw placeholders on background canvas; interactive HTML slots handle them
+              },
+              tier: "preview",
+              assetBitmaps,
+              guestValues: {},
+            },
+            canvas
+          ).then(() => {
+            if (!cancelled) setSlicesLoaded(true);
+          });
+        }
+      };
+      img.onerror = () => {
+        loadedCount++;
+      };
+      img.src = ref.url;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [manifest]);
+
   return (
     <div className="flyer">
-      <img
-        className="poster"
-        alt={`${event.title} event artwork`}
-        src={event.artwork}
-      />
+      {manifest && (
+        <canvas
+          ref={canvasRef}
+          className="poster"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            display: slicesLoaded ? "block" : "none",
+            objectFit: "contain",
+          }}
+        />
+      )}
+
+      {(!manifest || !slicesLoaded) && (
+        <img
+          className="poster"
+          alt={`${event.title} event artwork`}
+          src={event.artwork}
+        />
+      )}
+
       <div className="stub">
         <span>I WILL BE THERE</span>
         <i aria-hidden="true" />
       </div>
+
       {event.placeholders.map((p, i) => {
         const value = values[p.id] ?? (sample ? p.sampleValue : "");
         const b = p.box;

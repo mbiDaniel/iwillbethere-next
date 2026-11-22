@@ -1,19 +1,28 @@
 "use client";
+
 import { useState } from "react";
-import { ChevronDown, RotateCw } from "lucide-react";
+import { ChevronDown, PlusCircle, RotateCw, Trash2 } from "lucide-react";
 import { FlyerPreview } from "./flyer";
 import type { Event, Placeholder, PlaceholderOptions } from "@/lib/types";
 import { slots } from "@/lib/mock-data";
 import { toast } from "sonner";
+import { FidelityCard } from "./flyer-fidelity";
+import { DownloadWeightCard } from "./download-weight";
+import { ValidationReport } from "./validation-report";
+import { FlyerManifest } from "@/lib/flyer/types";
+
 export function PlaceholderOptionsPanel({
   p,
   update,
+  onRemove,
 }: {
   p: Placeholder;
   update: (p: Placeholder) => void;
+  onRemove?: (id: string) => void;
 }) {
   const opts = (v: Partial<PlaceholderOptions>) =>
     update({ ...p, options: { ...p.options, ...v } });
+
   return (
     <div className="fields opts">
       <label>
@@ -118,67 +127,407 @@ export function PlaceholderOptionsPanel({
           </label>
         </>
       )}
+
+      {/* Position & Dimensions on canvas (percent) */}
+      <div style={{ gridColumn: "1 / -1", paddingTop: "0.25rem" }}>
+        <span className="hint" style={{ fontWeight: 600 }}>
+          Canvas Position & Size (%)
+        </span>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: "8px",
+            marginTop: "6px",
+          }}
+        >
+          <label>
+            X (%)
+            <input
+              type="number"
+              min={0}
+              max={95}
+              value={p.box?.x ?? 0}
+              onChange={(e) =>
+                update({
+                  ...p,
+                  box: {
+                    ...p.box,
+                    x: Math.max(0, Math.min(95, Number(e.target.value))),
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            Y (%)
+            <input
+              type="number"
+              min={0}
+              max={95}
+              value={p.box?.y ?? 0}
+              onChange={(e) =>
+                update({
+                  ...p,
+                  box: {
+                    ...p.box,
+                    y: Math.max(0, Math.min(95, Number(e.target.value))),
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            Width (%)
+            <input
+              type="number"
+              min={5}
+              max={100}
+              value={p.box?.w ?? 50}
+              onChange={(e) =>
+                update({
+                  ...p,
+                  box: {
+                    ...p.box,
+                    w: Math.max(5, Math.min(100, Number(e.target.value))),
+                  },
+                })
+              }
+            />
+          </label>
+          <label>
+            Height (%)
+            <input
+              type="number"
+              min={2}
+              max={100}
+              value={p.box?.h ?? 10}
+              onChange={(e) =>
+                update({
+                  ...p,
+                  box: {
+                    ...p.box,
+                    h: Math.max(2, Math.min(100, Number(e.target.value))),
+                  },
+                })
+              }
+            />
+          </label>
+        </div>
+      </div>
+
+      {onRemove && (
+        <div style={{ gridColumn: "1 / -1", paddingTop: "0.5rem" }}>
+          <button
+            type="button"
+            className="btn danger small"
+            onClick={() => onRemove(p.id)}
+          >
+            <Trash2 size={14} /> Remove this placeholder
+          </button>
+        </div>
+      )}
+
       <p className="notice">
         These settings are locked for guests. They can only change the content.
       </p>
     </div>
   );
 }
+
 export function PlaceholderList({
   event,
+  manifest,
+  validationIssues = [],
+  fidelityScore,
+  compositeUrl,
+  previewUrl,
   onChange,
+  onRescan,
+  onUseFlattenedFallback,
 }: {
   event: Event;
+  manifest?: FlyerManifest | null;
+  validationIssues?: any[];
+  fidelityScore?: number | null;
+  compositeUrl?: string | null;
+  previewUrl?: string | null;
   onChange: (list: Placeholder[]) => void;
+  onRescan?: (prefix: string) => Promise<void> | void;
+  onUseFlattenedFallback?: () => Promise<void> | void;
 }) {
-  const [prefix, setPrefix] = useState("#PLACEHOLDER_"),
-    [selected, select] = useState("name"),
-    [hover, setHover] = useState("");
+  const [prefix, setPrefix] = useState("#PLACEHOLDER_");
+  const [selected, select] = useState(event.placeholders[0]?.id || "");
+  const [hover, setHover] = useState("");
+  const [rescanning, setRescanning] = useState(false);
+  const [isAddingCustom, setIsAddingCustom] = useState(false);
+  const [customKey, setCustomKey] = useState("");
+  const [customType, setCustomType] = useState<"text" | "image">("text");
+  const [customPreset, setCustomPreset] = useState("center");
+
   const list = event.placeholders;
+
+  const handleAddPlaceholder = (
+    key: string,
+    type: "text" | "image",
+    preset: string = "center"
+  ) => {
+    const cleanKey =
+      key.trim().toUpperCase() || (type === "image" ? "PHOTO" : "NAME");
+
+    if (list.some((p) => p.key.trim().toUpperCase() === cleanKey)) {
+      toast.error(`Key "${cleanKey}" already exists. Choose a unique key.`);
+      return;
+    }
+
+    let box = { x: 15, y: 40, w: 70, h: 12 };
+    let useShapeAsMask = false;
+
+    if (preset === "name_bottom") {
+      box = { x: 15, y: 74, w: 70, h: 10 };
+    } else if (preset === "top") {
+      box = { x: 10, y: 12, w: 80, h: 10 };
+    } else if (preset === "photo_portrait") {
+      box = { x: 25, y: 20, w: 50, h: 45 };
+      useShapeAsMask = false;
+    } else if (preset === "photo_circle") {
+      box = { x: 35, y: 22, w: 30, h: 25 };
+      useShapeAsMask = true;
+    } else if (preset === "center") {
+      box =
+        type === "image"
+          ? { x: 25, y: 25, w: 50, h: 40 }
+          : { x: 15, y: 45, w: 70, h: 12 };
+      if (type === "image") useShapeAsMask = true;
+    }
+
+    const newId = `placeholder-${Date.now()}`;
+    const newPlaceholder: Placeholder = {
+      id: newId,
+      layerName: `Custom ${cleanKey}`,
+      key: cleanKey,
+      type,
+      sampleValue: type === "image" ? "/jamie.png" : "Jamie Park",
+      box,
+      options: {
+        maxLines: type === "text" ? 1 : undefined,
+        maxLength: type === "text" ? 50 : undefined,
+        align: "center",
+        minFontSize: 12,
+        maxFontSize: 32,
+        fallbackFont: "Arial",
+        fit: type === "image" ? "cover" : undefined,
+        useShapeAsMask,
+      },
+    };
+
+    const updated = [...list, newPlaceholder];
+    onChange(updated);
+    select(newId);
+    setIsAddingCustom(false);
+    setCustomKey("");
+    toast.success(`Placeholder "${cleanKey}" added.`);
+  };
+
+  const handleRemove = (id: string) => {
+    const updated = list.filter((p) => p.id !== id);
+    onChange(updated);
+    if (selected === id) {
+      select(updated[0]?.id ?? "");
+    }
+    toast.info("Placeholder removed.");
+  };
+
+  const sliceItems = manifest?.items.filter((i) => i.kind === "slice") as any[] || [];
+  const slicesData = sliceItems.map((s) => ({
+    id: s.id,
+    previewBytes: s.assets?.preview?.bytes,
+    fullBytes: s.assets?.full?.bytes,
+    w: s.w,
+    h: s.h,
+  }));
+
+  const effectiveFidelity =
+    fidelityScore !== undefined && fidelityScore !== null
+      ? fidelityScore
+      : manifest?.fidelity?.score ?? 1.0;
+
   return (
-    <div className="stack">
-      <div className="fields panel">
-        <label>
+    <div className="stack" style={{ gap: "16px" }}>
+      {/* Fidelity card */}
+      <FidelityCard
+        fidelityScore={effectiveFidelity}
+        compositeUrl={compositeUrl}
+        previewUrl={previewUrl || event.artwork}
+        warnings={manifest?.fidelity?.warnings}
+        onUseFlattenedFallback={onUseFlattenedFallback}
+      />
+
+      {/* Download weight card */}
+      <DownloadWeightCard
+        totalPreviewBytes={manifest?.tiers.preview.totalBytes}
+        totalFullBytes={manifest?.tiers.full.totalBytes}
+        sliceCount={sliceItems.length}
+        slices={slicesData}
+      />
+
+      {/* Validation Report */}
+      <ValidationReport issues={validationIssues} />
+
+      {/* Re-scan controls */}
+      <div className="fields panel row spread" style={{ alignItems: "center" }}>
+        <label style={{ flex: 1 }}>
           Layer prefix
-          <input value={prefix} onChange={(e) => setPrefix(e.target.value)} />
+          <input
+            value={prefix}
+            onChange={(e) => setPrefix(e.target.value)}
+            placeholder="#PLACEHOLDER_"
+          />
         </label>
         <button
+          type="button"
           className="btn secondary"
-          onClick={() => {
-            // TODO: wire to backend — discover actual PSD layers instead of filtering fixtures.
-            const detected = prefix
-              ? slots
-                  .filter((p) => p.layerName.startsWith(prefix))
-                  .map((p) => ({ ...p, key: p.layerName.slice(prefix.length) }))
-              : [];
-            onChange(detected);
-            select(detected[0]?.id ?? "");
-            toast.info(`${detected.length} placeholders found`);
+          disabled={rescanning}
+          style={{ marginTop: "18px" }}
+          onClick={async () => {
+            if (onRescan) {
+              setRescanning(true);
+              try {
+                await onRescan(prefix);
+              } finally {
+                setRescanning(false);
+              }
+            } else {
+              toast.info(`Scanning with prefix ${prefix}`);
+            }
           }}
         >
-          <RotateCw size={15} />
-          Re-scan layers
+          <RotateCw size={15} className={rescanning ? "animate-spin" : ""} />
+          {rescanning ? "Downloading PSD & re-scanning..." : "Re-scan PSD"}
         </button>
       </div>
+
+      {/* Add Placeholder Panel */}
+      <div
+        className="panel stack"
+        style={{
+          background: "var(--muted)",
+          border: "1.5px dashed var(--border)",
+          padding: "16px",
+        }}
+      >
+        <div className="row spread">
+          <div className="row" style={{ gap: "8px" }}>
+            <PlusCircle size={17} />
+            <strong>Add placeholder slot</strong>
+          </div>
+          {isAddingCustom && (
+            <button
+              type="button"
+              className="btn ghost small"
+              onClick={() => setIsAddingCustom(false)}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+
+        {!isAddingCustom ? (
+          <div className="row wrap" style={{ gap: "8px" }}>
+            <button
+              type="button"
+              className="btn secondary small"
+              onClick={() => handleAddPlaceholder("NAME", "text", "name_bottom")}
+            >
+              + Guest Name (Text)
+            </button>
+            <button
+              type="button"
+              className="btn secondary small"
+              onClick={() => handleAddPlaceholder("PHOTO", "image", "photo_circle")}
+            >
+              + Guest Photo (Image)
+            </button>
+            <button
+              type="button"
+              className="btn secondary small"
+              onClick={() => {
+                setCustomKey("");
+                setCustomType("text");
+                setIsAddingCustom(true);
+              }}
+            >
+              + Custom Placeholder...
+            </button>
+          </div>
+        ) : (
+          <div className="fields opts" style={{ marginTop: "4px" }}>
+            <label>
+              Key Name
+              <input
+                placeholder="e.g. MESSAGE, TITLE, PHOTO"
+                value={customKey}
+                onChange={(e) => setCustomKey(e.target.value.toUpperCase())}
+              />
+            </label>
+            <label>
+              Type
+              <select
+                value={customType}
+                onChange={(e) => {
+                  const t = e.target.value === "image" ? "image" : "text";
+                  setCustomType(t);
+                  setCustomPreset(t === "image" ? "photo_circle" : "center");
+                }}
+              >
+                <option value="text">Text (Name, Quote, Title)</option>
+                <option value="image">Image (Guest Photo, Logo)</option>
+              </select>
+            </label>
+            <label>
+              Placement Preset
+              <select
+                value={customPreset}
+                onChange={(e) => setCustomPreset(e.target.value)}
+              >
+                {customType === "text" ? (
+                  <>
+                    <option value="name_bottom">Bottom Name (x:15%, y:74%)</option>
+                    <option value="center">Center (x:15%, y:45%)</option>
+                    <option value="top">Top Header (x:10%, y:12%)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="photo_circle">Circle Avatar (x:35%, y:22%)</option>
+                    <option value="photo_portrait">Center Portrait (x:25%, y:20%)</option>
+                    <option value="center">Center Square (x:25%, y:25%)</option>
+                  </>
+                )}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn primary small"
+              disabled={!customKey.trim()}
+              onClick={() => handleAddPlaceholder(customKey, customType, customPreset)}
+            >
+              Add to flyer
+            </button>
+          </div>
+        )}
+      </div>
+
       {!list.length && (
         <p className="notice warn">
-          No placeholders found. Try #PLACEHOLDER_ and re-scan.
+          No placeholders yet. Click one of the buttons above to add one.
         </p>
       )}
-      {new Set(list.map((p) => p.key.trim())).size < list.length && (
-        <p role="alert" className="notice warn">
-          Duplicate key. Give each layer a unique key.
-        </p>
-      )}
-      {list.some((p) => p.type === "text") && !event.fonts.length && (
-        <p className="notice warn">
-          Missing font: Studio Grotesk. The preview uses the fallback font.
-        </p>
-      )}
+
       <div className="dual">
         <div className="preview-bed">
           <FlyerPreview
             event={event}
+            manifest={manifest}
             sample
             highlighted={hover || selected}
             onSelect={select}
@@ -192,16 +541,35 @@ export function PlaceholderList({
               onMouseEnter={() => setHover(p.id)}
               onMouseLeave={() => setHover("")}
             >
-              <button
-                className="layer-head row spread"
-                aria-expanded={selected === p.id}
-                onClick={() => select(selected === p.id ? "" : p.id)}
+              <div
+                className="row spread"
+                style={{ width: "100%", paddingRight: "8px" }}
               >
-                <span>
-                  {i + 1}. {p.layerName}
-                </span>
-                <ChevronDown size={16} />
-              </button>
+                <button
+                  type="button"
+                  className="layer-head row spread"
+                  style={{ flex: 1 }}
+                  aria-expanded={selected === p.id}
+                  onClick={() => select(selected === p.id ? "" : p.id)}
+                >
+                  <span>
+                    {i + 1}. {p.layerName || p.key}
+                  </span>
+                  <ChevronDown size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="iconbtn danger"
+                  title={`Remove ${p.key}`}
+                  style={{ width: "30px", height: "30px", marginLeft: "6px" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemove(p.id);
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
               <p className="hint">
                 {p.type === "text" ? "Text" : "Image"} / {p.key || "No key"}
               </p>
@@ -211,6 +579,7 @@ export function PlaceholderList({
                   update={(next) =>
                     onChange(list.map((s) => (s.id === next.id ? next : s)))
                   }
+                  onRemove={handleRemove}
                 />
               )}
             </section>

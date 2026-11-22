@@ -3,3 +3,11 @@ pmOnFail: ignore
 minimumReleaseAgeExclude:
   - '@next/*'
   - next
+
+allowBuilds:
+  esbuild: true
+  '@napi-rs/canvas': true
+  '@prisma/client': false
+  better-sqlite3: false
+
+verifyDepsBeforeRun: false

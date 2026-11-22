@@ -1,4 +1,5 @@
 "use client";
+
 import {
   createContext,
   useContext,
@@ -7,23 +8,34 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { events as seed } from "@/lib/mock-data";
 import type { Event } from "@/lib/types";
-const Context = createContext<{
+
+interface EventContextValue {
   events: Event[];
   setEvents: Dispatch<SetStateAction<Event[]>>;
-} | null>(null);
-export function MockProvider({ children }: { children: ReactNode }) {
-  // TODO: wire to backend — replace session-only event reads and mutations.
-  const [events, setEvents] = useState(seed);
+  refreshEvents?: () => Promise<void>;
+}
+
+const Context = createContext<EventContextValue | null>(null);
+
+export function MockProvider({
+  children,
+  initialEvents = [],
+}: {
+  children: ReactNode;
+  initialEvents?: Event[];
+}) {
+  const [events, setEvents] = useState<Event[]>(initialEvents);
+
   return (
     <Context.Provider value={{ events, setEvents }}>
       {children}
     </Context.Provider>
   );
 }
+
 export function useEvents() {
   const value = useContext(Context);
-  if (!value) throw Error("Missing event provider");
+  if (!value) throw new Error("Missing event provider");
   return value;
 }

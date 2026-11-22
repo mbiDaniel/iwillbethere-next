@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Asterisk, ArrowUpRight, LayoutGrid } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
+import { AuthNav } from "./auth-nav";
 export function Brand() {
   return (
     <Link className="brand" href="/">
@@ -25,9 +26,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
               Designer guide
             </Link>
             <ThemeToggle />
-            <Link href="/login" className="login">
-              Log in <ArrowUpRight size={15} />
-            </Link>
+            <AuthNav />
           </nav>
         </div>
       </header>

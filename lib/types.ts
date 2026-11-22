@@ -29,4 +29,6 @@ export interface Event {
   count: number;
   placeholders: Placeholder[];
   fonts: { name: string; status: string }[];
+  manifestUrl?: string | null;
+  manifestKey?: string | null;
 }

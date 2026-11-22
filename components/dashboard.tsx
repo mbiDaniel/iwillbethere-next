@@ -1,13 +1,26 @@
 "use client";
+
 import Link from "next/link";
 import { MoreHorizontal, Plus } from "lucide-react";
 import type { Event } from "@/lib/types";
-import { useEvents } from "./store";
 import { dateLabel } from "@/lib/mock-data";
 import { CopyButton, DeleteEvent, StatusBadge } from "./event-controls";
 import { toast } from "sonner";
-export function EventCard({ event: e }: { event: Event }) {
-  const { setEvents } = useEvents();
+import { useState } from "react";
+import { duplicateEvent, deleteEvent } from "@/lib/actions/events";
+import { useRouter } from "next/navigation";
+
+export function EventCard({
+  event: e,
+  onDuplicate,
+  onDelete,
+}: {
+  event: Event;
+  onDuplicate: (event: Event) => void;
+  onDelete: (id: string) => void;
+}) {
+  const router = useRouter();
+
   return (
     <article className="event-card">
       <Link
@@ -20,7 +33,7 @@ export function EventCard({ event: e }: { event: Event }) {
       <div className="event-info">
         <div className="row spread">
           <StatusBadge status={e.status} />
-          <span className="hint">{dateLabel(e.date)}</span>
+          <span className="hint">{e.date ? dateLabel(e.date) : "No date"}</span>
         </div>
         <Link href={`/dashboard/events/${e.id}`}>
           <h3>{e.title}</h3>
@@ -39,30 +52,39 @@ export function EventCard({ event: e }: { event: Event }) {
             <div className="menu-pop">
               <Link href={`/dashboard/events/${e.id}`}>Edit</Link>
               <button
-                onClick={(ev) => {
-                  const id = crypto.randomUUID();
-                  setEvents((all) => [
-                    ...all,
-                    {
+                onClick={async (ev) => {
+                  ev.currentTarget.closest("details")?.removeAttribute("open");
+                  const res = await duplicateEvent(e.id);
+                  if (res.ok) {
+                    onDuplicate({
                       ...e,
-                      id,
-                      slug: id,
+                      id: res.data.id,
+                      slug: res.data.slug,
                       title: e.title + " (copy)",
                       count: 0,
                       status: "Draft",
-                    },
-                  ]);
-                  ev.currentTarget.closest("details")?.removeAttribute("open");
-                  toast.success("Draft duplicated");
+                    });
+                    toast.success("Draft duplicated");
+                    router.refresh();
+                  } else {
+                    toast.error(res.error);
+                  }
                 }}
               >
                 Duplicate
               </button>
               <DeleteEvent
                 title={e.title}
-                onDelete={() =>
-                  setEvents((all) => all.filter((x) => x.id !== e.id))
-                }
+                onDelete={async () => {
+                  const res = await deleteEvent(e.id);
+                  if (res.ok) {
+                    onDelete(e.id);
+                    toast.success("Event deleted");
+                    router.refresh();
+                  } else {
+                    toast.error(res.error);
+                  }
+                }}
               />
             </div>
           </details>
@@ -71,8 +93,10 @@ export function EventCard({ event: e }: { event: Event }) {
     </article>
   );
 }
-export function Dashboard() {
-  const { events } = useEvents();
+
+export function Dashboard({ initialEvents = [] }: { initialEvents?: Event[] }) {
+  const [eventsList, setEventsList] = useState<Event[]>(initialEvents);
+
   return (
     <>
       <div className="section-title">
@@ -84,10 +108,19 @@ export function Dashboard() {
           <Plus size={17} /> New event
         </Link>
       </div>
-      {events.length ? (
+      {eventsList.length ? (
         <div className="event-grid">
-          {events.map((e) => (
-            <EventCard key={e.id} event={e} />
+          {eventsList.map((e) => (
+            <EventCard
+              key={e.id}
+              event={e}
+              onDuplicate={(newEvent) =>
+                setEventsList((prev) => [newEvent, ...prev])
+              }
+              onDelete={(id) =>
+                setEventsList((prev) => prev.filter((x) => x.id !== id))
+              }
+            />
           ))}
         </div>
       ) : (

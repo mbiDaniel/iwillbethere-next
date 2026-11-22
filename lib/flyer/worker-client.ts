@@ -1,4 +1,40 @@
 import { SlicerResult, SliceOptions } from "./slice";
+import type { PsdLayerDescriptor } from "./detect";
+
+export async function inspectPsdLayersInWorker(
+  buffer: ArrayBuffer,
+  prefix = "#PLACEHOLDER_"
+): Promise<PsdLayerDescriptor[]> {
+  if (typeof window !== "undefined" && typeof Worker !== "undefined") {
+    return await new Promise<PsdLayerDescriptor[]>((resolve, reject) => {
+      const worker = new Worker(new URL("./psd-worker.ts", import.meta.url), {
+        type: "module",
+      });
+      worker.onmessage = (event) => {
+        if (event.data.type === "LAYERS") {
+          worker.terminate();
+          resolve(event.data.layers);
+        } else if (event.data.type === "ERROR") {
+          worker.terminate();
+          reject(new Error(event.data.error || "Could not inspect PSD layers"));
+        }
+      };
+      worker.onerror = (event) => {
+        worker.terminate();
+        reject(new Error(event.message || "Could not inspect PSD layers"));
+      };
+
+      const transferableBuffer = buffer.slice(0);
+      worker.postMessage(
+        { type: "INSPECT_PSD", buffer: transferableBuffer, options: { prefix } },
+        [transferableBuffer]
+      );
+    });
+  }
+
+  const { inspectPsdLayers } = await import("./slice");
+  return inspectPsdLayers(buffer, prefix);
+}
 
 export type SlicerProgressCallback = (
   step: "reading" | "parsing" | "detecting" | "slicing" | "encoding" | "verifying",

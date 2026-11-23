@@ -71,6 +71,13 @@ function NumericTextInput({
           setError("");
         }}
         onBlur={validateAndCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+            event.preventDefault();
+            validateAndCommit();
+            event.currentTarget.blur();
+          }
+        }}
       />
       {error && (
         <span

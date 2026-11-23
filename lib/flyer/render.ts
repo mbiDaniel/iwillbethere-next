@@ -90,9 +90,10 @@ export async function renderFlyer(
           color: "#ffffff",
         };
 
+        const guestTextScale = 1.2;
         const scaledStyle = {
           ...baseStyle,
-          fontSize: Math.round(baseStyle.fontSize * scale),
+          fontSize: Math.round(baseStyle.fontSize * guestTextScale * scale),
           lineHeight: baseStyle.lineHeight ? Math.round(baseStyle.lineHeight * scale) : undefined,
           tracking: baseStyle.tracking ? Math.round(baseStyle.tracking * scale) : undefined,
         };
@@ -102,7 +103,9 @@ export async function renderFlyer(
           maxLength: p.options.maxLength,
           align: p.options.align,
           minFontSize: p.options.minFontSize ? Math.round(p.options.minFontSize * scale) : undefined,
-          maxFontSize: p.options.maxFontSize ? Math.round(p.options.maxFontSize * scale) : undefined,
+          maxFontSize: p.options.maxFontSize
+            ? Math.round(p.options.maxFontSize * guestTextScale * scale)
+            : undefined,
         });
 
         renderFittedText(ctx, layout, boxX, boxY, boxW, boxH, scaledStyle, {

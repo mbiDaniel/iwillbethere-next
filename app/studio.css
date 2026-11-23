@@ -527,8 +527,6 @@ h3 {
 }
 .preview-bed > .flyer {
   width: min(100%, 300px);
-  border: 1px solid var(--ink);
-  box-shadow: 4px 5px 0 var(--shadow);
 }
 .fields,
 .stack {

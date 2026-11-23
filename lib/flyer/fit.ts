@@ -1,4 +1,5 @@
 import { createCanvas, CanvasInstance } from "./canvas";
+import { applyPhotoStyle, PhotoStylePreset } from "./photo-style";
 
 export interface FitRects {
   sx: number;
@@ -15,6 +16,11 @@ export interface FitOptions {
   fit?: "cover" | "contain";
   framingMode?: "center" | "top-center" | "face-aware" | "focal";
   focalPoint?: { x: number; y: number }; // normalized 0..1
+  photoStyle?: PhotoStylePreset;
+  bottomFade?: number;
+  contrast?: number;
+  brightness?: number;
+  warmth?: number;
 }
 
 /**
@@ -137,6 +143,23 @@ export function applyImageFitAndMask(
     ctx.globalCompositeOperation = "destination-in";
     ctx.drawImage(maskCanvas, 0, 0, tw, th);
     ctx.globalCompositeOperation = "source-over";
+  }
+
+  // Apply style color grading and bottom fade if requested
+  if (
+    (options.photoStyle && options.photoStyle !== "none") ||
+    (options.bottomFade !== undefined && options.bottomFade > 0) ||
+    options.contrast !== undefined ||
+    options.brightness !== undefined ||
+    options.warmth !== undefined
+  ) {
+    applyPhotoStyle(canvas, {
+      style: options.photoStyle,
+      bottomFade: options.bottomFade,
+      contrast: options.contrast,
+      brightness: options.brightness,
+      warmth: options.warmth,
+    });
   }
 
   return canvas;

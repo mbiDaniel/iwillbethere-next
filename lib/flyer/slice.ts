@@ -1,6 +1,6 @@
 import { readPsd, initializeCanvas, Layer, Psd } from "ag-psd";
 import pixelmatch from "pixelmatch";
-import { createCanvas, canvasToBlob, loadImageBitmap, CanvasInstance } from "./canvas";
+import { createCanvas, canvasToBlob, canvasToDataUrl, loadImageBitmap, CanvasInstance } from "./canvas";
 import { normalizePostScriptFontName } from "./fonts";
 import {
   AssetRef,
@@ -48,18 +48,92 @@ export interface SliceOptions {
   onProgress?: (step: "reading" | "parsing" | "detecting" | "slicing" | "encoding" | "verifying", percent: number) => void;
 }
 
-export function inspectPsdLayers(
+export async function inspectPsdLayers(
   psdData: ArrayBuffer | Uint8Array,
   prefix = "#PLACEHOLDER_"
-): PsdLayerDescriptor[] {
+): Promise<PsdLayerDescriptor[]> {
   preflightCheck(psdData);
-  const psd = readPsd(psdData, { skipLayerImageData: true, skipThumbnail: true });
+  // Read PSD with image data so individual layers and composite can be previewed
+  const psd = readPsd(psdData, { skipThumbnail: false });
   const layers: PsdLayerDescriptor[] = [];
 
-  function traverse(items: Layer[] | undefined, parentIndices: number[]) {
+  // Generate composite flyer preview thumbnail if composite canvas exists
+  let compositeThumbnail: string | undefined;
+  if (psd.canvas && psd.canvas.width > 0 && psd.canvas.height > 0) {
+    try {
+      const maxDim = 400;
+      const scale = Math.min(maxDim / psd.canvas.width, maxDim / psd.canvas.height, 1);
+      const dstW = Math.max(1, Math.round(psd.canvas.width * scale));
+      const dstH = Math.max(1, Math.round(psd.canvas.height * scale));
+      const thumb = createCanvas(dstW, dstH);
+      const ctx = thumb.getContext("2d");
+      ctx.drawImage(psd.canvas, 0, 0, psd.canvas.width, psd.canvas.height, 0, 0, dstW, dstH);
+      compositeThumbnail = await canvasToDataUrl(thumb, "image/jpeg", 0.85);
+    } catch (err) {
+      console.warn("Could not generate composite preview:", err);
+    }
+  }
+
+  async function generateThumbnail(layer: Layer): Promise<string | undefined> {
+    try {
+      // 1. Layer has its own canvas
+      if (layer.canvas && layer.canvas.width > 0 && layer.canvas.height > 0) {
+        const maxDim = 96;
+        const srcW = layer.canvas.width;
+        const srcH = layer.canvas.height;
+        const scale = Math.min(maxDim / srcW, maxDim / srcH, 1);
+        const dstW = Math.max(1, Math.round(srcW * scale));
+        const dstH = Math.max(1, Math.round(srcH * scale));
+        const thumb = createCanvas(dstW, dstH);
+        const ctx = thumb.getContext("2d");
+        ctx.drawImage(layer.canvas, 0, 0, srcW, srcH, 0, 0, dstW, dstH);
+        return await canvasToDataUrl(thumb, "image/png");
+      }
+
+      // 2. Crop from composite canvas if bounds exist
+      const left = layer.left ?? 0;
+      const top = layer.top ?? 0;
+      const right = layer.right ?? 0;
+      const bottom = layer.bottom ?? 0;
+      const w = right - left;
+      const h = bottom - top;
+
+      if (psd.canvas && w > 0 && h > 0) {
+        const maxDim = 96;
+        const scale = Math.min(maxDim / w, maxDim / h, 1);
+        const dstW = Math.max(1, Math.round(w * scale));
+        const dstH = Math.max(1, Math.round(h * scale));
+        const thumb = createCanvas(dstW, dstH);
+        const ctx = thumb.getContext("2d");
+        ctx.drawImage(psd.canvas, left, top, w, h, 0, 0, dstW, dstH);
+        return await canvasToDataUrl(thumb, "image/png");
+      }
+
+      // 3. Text layer badge fallback
+      if (layer.text && layer.text.text) {
+        const text = layer.text.text.trim();
+        const thumb = createCanvas(96, 36);
+        const ctx = thumb.getContext("2d");
+        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+        ctx.fillRect(0, 0, 96, 36);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 11px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text.slice(0, 16), 48, 18, 88);
+        return await canvasToDataUrl(thumb, "image/png");
+      }
+    } catch {
+      // Ignore thumbnail generation errors
+    }
+    return undefined;
+  }
+
+  async function traverse(items: Layer[] | undefined, parentIndices: number[]) {
     if (!items) return;
-    items.forEach((layer, index) => {
-      if (layer.hidden) return;
+    for (let index = 0; index < items.length; index++) {
+      const layer = items[index];
+      if (layer.hidden) continue;
       const layerPath = [...parentIndices, index].join(".");
       const name = layer.name?.trim() || `Layer ${layerPath}`;
 
@@ -70,6 +144,7 @@ export function inspectPsdLayers(
           const groupRight = layer.right ?? groupLeft + 1;
           const groupBottom = layer.bottom ?? groupTop + 1;
           if (groupRight > groupLeft && groupBottom > groupTop) {
+            const thumbnail = await generateThumbnail(layer);
             layers.push({
               layerPath,
               name,
@@ -78,18 +153,34 @@ export function inspectPsdLayers(
               right: groupRight,
               bottom: groupBottom,
               hasPlaceholderTag: true,
+              type: "image",
+              thumbnail,
+              compositeThumbnail,
             });
           }
         }
-        traverse(layer.children, [...parentIndices, index]);
-        return;
+        await traverse(layer.children, [...parentIndices, index]);
+        continue;
       }
 
-      const left = layer.left ?? 0;
-      const top = layer.top ?? 0;
-      const right = layer.right ?? left + 1;
-      const bottom = layer.bottom ?? top + 1;
-      if (right <= left || bottom <= top) return;
+      const isText = !!layer.text;
+      let left = layer.left ?? 0;
+      let top = layer.top ?? 0;
+      let right = layer.right ?? (isText ? left + 100 : left + 1);
+      let bottom = layer.bottom ?? (isText ? top + 36 : top + 1);
+
+      if (right <= left && isText) {
+        right = left + Math.max(50, Math.round((layer.text?.text?.length ?? 8) * 12));
+      }
+      if (bottom <= top && isText) {
+        bottom = top + Math.max(24, Math.round(layer.text?.style?.fontSize ?? 32));
+      }
+
+      if (right <= left || bottom <= top) continue;
+
+      const thumbnail = await generateThumbnail(layer);
+      const textPreview = layer.text?.text?.trim() || undefined;
+      const type: "text" | "image" = isText ? "text" : "image";
 
       layers.push({
         layerPath,
@@ -99,11 +190,18 @@ export function inspectPsdLayers(
         right,
         bottom,
         hasPlaceholderTag: name.startsWith(prefix),
+        type,
+        thumbnail,
+        textPreview,
+        compositeThumbnail,
       });
-    });
+    }
   }
 
-  traverse(psd.children, []);
+  await traverse(psd.children, []);
+  if (compositeThumbnail) {
+    (layers as any).compositeThumbnail = compositeThumbnail;
+  }
   return layers;
 }
 

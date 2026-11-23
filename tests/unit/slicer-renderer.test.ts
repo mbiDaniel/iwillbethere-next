@@ -106,10 +106,12 @@ describe("lib/flyer/slice & render integration", () => {
       "zero-placeholders.psd"
     );
     const noPlaceholderBuffer = fs.readFileSync(noPlaceholderPath);
-    const layers = inspectPsdLayers(noPlaceholderBuffer);
+    const layers = await inspectPsdLayers(noPlaceholderBuffer);
 
     expect(layers.length).toBeGreaterThan(0);
     expect(layers.some((layer) => layer.hasPlaceholderTag)).toBe(false);
+    expect(layers[0].thumbnail).toBeDefined();
+    expect(layers[0].thumbnail?.startsWith("data:image/")).toBe(true);
 
     const result = await slicePsd(noPlaceholderBuffer, {
       manualPlaceholders: [

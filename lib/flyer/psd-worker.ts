@@ -8,9 +8,11 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (type === "INSPECT_PSD") {
     try {
+      const layers = await inspectPsdLayers(buffer, options?.prefix);
       self.postMessage({
         type: "LAYERS",
-        layers: inspectPsdLayers(buffer, options?.prefix),
+        layers,
+        compositeThumbnail: (layers as any).compositeThumbnail,
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

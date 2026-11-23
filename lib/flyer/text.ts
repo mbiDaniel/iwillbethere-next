@@ -126,11 +126,25 @@ export function fitTextToBox(
       ctx.letterSpacing = `${style.tracking}px`;
     }
 
-    const lineHeight = style.lineHeight ? Math.round(size * (style.lineHeight / size)) : Math.round(size * 1.2);
+    const lineRatio =
+      style.fontSize && style.lineHeight
+        ? style.lineHeight / style.fontSize
+        : 1.2;
+    const lineHeight = Math.round(size * Math.min(1.5, Math.max(1.0, lineRatio)));
     const { lines, truncated } = wrapText(ctx, cleanText, boxWidth, maxLines);
     const totalHeight = lines.length * lineHeight;
 
-    if (!truncated && totalHeight <= boxHeight) {
+    // For single-line text (e.g. guest name), the PSD layer bounds is often just
+    // the tight ink height of the original sample text (e.g. 38px). A single line of
+    // text only needs to fit horizontally within boxWidth; it shouldn't be crushed
+    // vertically down to minimum font size because of tight layer bounds.
+    // For multi-line text, totalHeight must fit within available boxHeight.
+    const fits =
+      maxLines === 1
+        ? !truncated && lines.length <= 1
+        : !truncated && lines.length <= maxLines && totalHeight <= Math.max(boxHeight, maxLines * lineHeight);
+
+    if (fits) {
       // It fits perfectly without truncation!
       bestFontSize = size;
       bestLines = lines;
@@ -143,7 +157,7 @@ export function fitTextToBox(
       // If even at minimum font size it doesn't fit, use minimum font and wrap/truncate
       bestFontSize = low;
       bestLines = lines;
-      bestTruncated = truncated || totalHeight > boxHeight;
+      bestTruncated = truncated || (maxLines > 1 && totalHeight > boxHeight);
       bestLineHeight = lineHeight;
     }
   }
@@ -194,7 +208,8 @@ export function renderFittedText(
   }
 
   // Vertically center lines in the box
-  const startY = boxY + (boxHeight - layout.totalHeight) / 2 + layout.lineHeight / 2;
+  const centerY = boxY + boxHeight / 2;
+  const startY = centerY - layout.totalHeight / 2 + layout.lineHeight / 2;
 
   for (let i = 0; i < layout.lines.length; i++) {
     const y = startY + i * layout.lineHeight;

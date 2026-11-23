@@ -105,7 +105,12 @@ export function FlyerPreview({
   }, [manifest]);
 
   return (
-    <div className="flyer">
+    <div
+      className="flyer"
+      style={{
+        aspectRatio: manifest ? `${manifest.width} / ${manifest.height}` : undefined,
+      }}
+    >
       {manifest && (
         <canvas
           ref={canvasRef}
@@ -130,11 +135,6 @@ export function FlyerPreview({
         />
       )}
 
-      <div className="stub">
-        <span>I WILL BE THERE</span>
-        <i aria-hidden="true" />
-      </div>
-
       {event.placeholders.map((p, i) => {
         const value = values[p.id] ?? (sample ? p.sampleValue : "");
         const b = p.box;
@@ -151,10 +151,18 @@ export function FlyerPreview({
               borderRadius:
                 p.type === "image" && p.options.useShapeAsMask ? "50%" : 0,
               textAlign: p.options.align,
-              alignContent: "center",
+              display: "flex",
+              alignItems: "center",
+              justifyContent:
+                p.options.align === "center"
+                  ? "center"
+                  : p.options.align === "right"
+                  ? "flex-end"
+                  : "flex-start",
               fontSize: `${Math.min(fontSize / 3.4, (95 * (p.options.maxLines ?? 1)) / Math.max(value?.length ?? 1, 1))}cqw`,
               fontFamily: p.options.fallbackFont,
               whiteSpace: (p.options.maxLines ?? 1) > 1 ? "normal" : "nowrap",
+              overflow: "visible",
             }}
           >
             {p.type === "image" ? (
@@ -162,7 +170,27 @@ export function FlyerPreview({
                 <img
                   alt="Guest portrait"
                   src={value}
-                  style={{ objectFit: p.options.fit }}
+                  style={{
+                    objectFit: p.options.fit,
+                    width: "100%",
+                    height: "100%",
+                    filter:
+                      p.options.photoStyle === "flyer-match" || p.options.photoStyle === "warm-cinema"
+                        ? "contrast(1.16) saturate(1.1) brightness(1.02) sepia(0.1)"
+                        : p.options.photoStyle === "studio"
+                        ? "contrast(1.1) brightness(1.03)"
+                        : p.options.photoStyle === "dramatic-bw"
+                        ? "grayscale(1) contrast(1.3)"
+                        : undefined,
+                    maskImage:
+                      p.options.bottomFade && p.options.bottomFade > 0
+                        ? `linear-gradient(to bottom, black ${100 - p.options.bottomFade}%, transparent 100%)`
+                        : undefined,
+                    WebkitMaskImage:
+                      p.options.bottomFade && p.options.bottomFade > 0
+                        ? `linear-gradient(to bottom, black ${100 - p.options.bottomFade}%, transparent 100%)`
+                        : undefined,
+                  }}
                 />
               ) : (
                 <ImagePlus size="48%" />

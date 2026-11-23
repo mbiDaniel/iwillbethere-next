@@ -137,11 +137,67 @@ export async function canvasToBuffer(
 }
 
 /**
- * Loads an image from Blob, Buffer, or ArrayBuffer into a drawable Image or ImageBitmap.
+ * Converts a Uint8Array into a base64 string in any environment
+ * without external dependencies or stack overflow issues.
+ */
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Converts a canvas instance directly into a data URL.
+ * Works seamlessly in Browser (HTMLCanvasElement & OffscreenCanvas), Web Worker, and Node.js.
+ */
+export async function canvasToDataUrl(
+  canvas: CanvasInstance,
+  type: "image/png" | "image/jpeg" | "image/webp" = "image/png",
+  quality?: number
+): Promise<string> {
+  if (typeof canvas.toDataURL === "function") {
+    return canvas.toDataURL(type, quality);
+  }
+  const buf = await canvasToBuffer(canvas, type, quality);
+  return `data:${type};base64,${uint8ArrayToBase64(buf)}`;
+}
+
+/**
+ * Loads an image from Blob, Buffer, ArrayBuffer, or data/HTTP URL string into a drawable Image or ImageBitmap.
  */
 export async function loadImageBitmap(
-  source: Blob | Uint8Array | ArrayBuffer
+  source: Blob | Uint8Array | ArrayBuffer | string
 ): Promise<any> {
+  if (typeof source === "string") {
+    if (typeof Image !== "undefined") {
+      return new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Failed to load image from source URL"));
+        img.src = source;
+      });
+    }
+    const napi = getNodeNapiCanvas();
+    if (napi) {
+      if (source.startsWith("data:")) {
+        const base64Data = source.split(",")[1];
+        const buf = Buffer.from(base64Data, "base64");
+        return await napi.loadImage(buf);
+      }
+      return await napi.loadImage(source);
+    }
+    if (typeof fetch !== "undefined" && typeof createImageBitmap === "function") {
+      const res = await fetch(source);
+      const blob = await res.blob();
+      return await createImageBitmap(blob);
+    }
+  }
+
   if (typeof createImageBitmap === "function" && source instanceof Blob) {
     return await createImageBitmap(source);
   }

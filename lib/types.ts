@@ -9,6 +9,13 @@ export interface PlaceholderOptions {
   fallbackFont?: string;
   fit?: "cover" | "contain";
   useShapeAsMask?: boolean;
+  sampleValue?: string;
+  removeBackground?: boolean;
+  photoStyle?: "none" | "flyer-match" | "warm-cinema" | "studio" | "dramatic-bw";
+  bottomFade?: number;
+  contrast?: number;
+  brightness?: number;
+  warmth?: number;
 }
 export interface Placeholder {
   id: string;

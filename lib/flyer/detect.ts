@@ -15,6 +15,10 @@ export interface PsdLayerDescriptor {
   right: number;
   bottom: number;
   hasPlaceholderTag: boolean;
+  type?: "text" | "image";
+  thumbnail?: string;
+  textPreview?: string;
+  compositeThumbnail?: string;
 }
 
 export interface DetectedPlaceholder {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -318,6 +318,7 @@ export function EventDetail({
             <MissingFontsPanel
               fonts={manifestFonts}
               eventId={e.id}
+              onResolved={() => router.refresh()}
             />
           )}
         </section>
@@ -468,7 +469,7 @@ function VersionsSection({ eventId, formatId }: { eventId: string; formatId: str
   const [loading, setLoading] = useState(true);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
-  const fetchVersions = () => {
+  const fetchVersions = useCallback(() => {
     if (!formatId) return;
     setLoading(true);
     getVersionList(eventId, formatId)
@@ -478,11 +479,11 @@ function VersionsSection({ eventId, formatId }: { eventId: string; formatId: str
         }
       })
       .finally(() => setLoading(false));
-  };
+  }, [eventId, formatId]);
 
-  useState(() => {
+  useEffect(() => {
     fetchVersions();
-  });
+  }, [fetchVersions]);
 
   const handleRestore = async (versionId: string) => {
     setRestoringId(versionId);

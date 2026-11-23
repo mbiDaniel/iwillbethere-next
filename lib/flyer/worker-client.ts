@@ -13,7 +13,11 @@ export async function inspectPsdLayersInWorker(
       worker.onmessage = (event) => {
         if (event.data.type === "LAYERS") {
           worker.terminate();
-          resolve(event.data.layers);
+          const layers = event.data.layers;
+          if (event.data.compositeThumbnail && Array.isArray(layers)) {
+            (layers as any).compositeThumbnail = event.data.compositeThumbnail;
+          }
+          resolve(layers);
         } else if (event.data.type === "ERROR") {
           worker.terminate();
           reject(new Error(event.data.error || "Could not inspect PSD layers"));
@@ -33,7 +37,7 @@ export async function inspectPsdLayersInWorker(
   }
 
   const { inspectPsdLayers } = await import("./slice");
-  return inspectPsdLayers(buffer, prefix);
+  return await inspectPsdLayers(buffer, prefix);
 }
 
 export type SlicerProgressCallback = (

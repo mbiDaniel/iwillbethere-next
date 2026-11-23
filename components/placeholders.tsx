@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { ChevronDown, PlusCircle, RotateCw, Trash2 } from "lucide-react";
+import { ChevronDown, PlusCircle, RotateCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { FlyerPreview } from "./flyer";
 import type { Event, Placeholder, PlaceholderOptions } from "@/lib/types";
 import { slots } from "@/lib/mock-data";
@@ -11,6 +11,7 @@ import { DownloadWeightCard } from "./download-weight";
 import { ValidationReport } from "./validation-report";
 import { FlyerManifest } from "@/lib/flyer/types";
 import { MissingFontsPanel } from "./missing-fonts";
+import { removeBackground, PhotoStylePreset } from "@/lib/flyer/photo-style";
 
 function NumericTextInput({
   label,
@@ -196,8 +197,8 @@ export function PlaceholderOptionsPanel({
                 })
               }
             >
-              <option>cover</option>
-              <option>contain</option>
+              <option value="cover">cover</option>
+              <option value="contain">contain</option>
             </select>
           </label>
           <label>
@@ -209,6 +210,66 @@ export function PlaceholderOptionsPanel({
               onChange={(e) => opts({ useShapeAsMask: e.target.checked })}
             />
           </label>
+          <label>
+            Style preset
+            <select
+              value={p.options.photoStyle ?? "flyer-match"}
+              onChange={(e) =>
+                opts({
+                  photoStyle: e.target.value as PhotoStylePreset,
+                })
+              }
+            >
+              <option value="flyer-match">Match Flyer (Warm Cinema)</option>
+              <option value="studio">Studio Portrait</option>
+              <option value="dramatic-bw">Dramatic B&W</option>
+              <option value="none">None (Original Colors)</option>
+            </select>
+          </label>
+          <label>
+            Blend bottom edge (%)
+            <input
+              type="number"
+              min={0}
+              max={60}
+              value={p.options.bottomFade ?? 25}
+              onChange={(e) =>
+                opts({
+                  bottomFade: Math.max(0, Math.min(60, Number(e.target.value) || 0)),
+                })
+              }
+            />
+          </label>
+          <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
+            <button
+              type="button"
+              className="btn secondary"
+              style={{ fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}
+              onClick={async () => {
+                const sampleSrc = p.sampleValue || p.options.sampleValue || "/jamie.png";
+                try {
+                  toast.info("Removing background from sample photo…");
+                  const cutout = await removeBackground(sampleSrc);
+                  update({
+                    ...p,
+                    sampleValue: cutout,
+                    options: {
+                      ...p.options,
+                      sampleValue: cutout,
+                      useShapeAsMask: false,
+                      bottomFade: p.options.bottomFade ?? 25,
+                      photoStyle: p.options.photoStyle ?? "flyer-match",
+                    },
+                  });
+                  toast.success("Background removed & styled to match flyer!");
+                } catch (err: any) {
+                  toast.error("Could not remove background: " + err.message);
+                }
+              }}
+            >
+              <Sparkles size={14} /> Remove background from sample
+            </button>
+          </div>
         </>
       )}
 
@@ -289,6 +350,7 @@ export function PlaceholderList({
   onChange,
   onRescan,
   onUseFlattenedFallback,
+  onManifestChange,
 }: {
   event: Event;
   manifest?: FlyerManifest | null;
@@ -299,6 +361,7 @@ export function PlaceholderList({
   onChange: (list: Placeholder[]) => void;
   onRescan?: (prefix: string) => Promise<void> | void;
   onUseFlattenedFallback?: () => Promise<void> | void;
+  onManifestChange?: (manifest: FlyerManifest) => void;
 }) {
   const [prefix, setPrefix] = useState("#PLACEHOLDER_");
   const [selected, select] = useState(event.placeholders[0]?.id || "");
@@ -423,6 +486,19 @@ export function PlaceholderList({
         <MissingFontsPanel
           fonts={manifest.fonts}
           eventId={event.id}
+          onResolved={(updatedFont) => {
+            if (manifest) {
+              const normTarget = updatedFont.family.toLowerCase();
+              const updatedFonts = manifest.fonts.map((f) =>
+                f.family.toLowerCase() === normTarget ? updatedFont : f
+              );
+              const updatedManifest: FlyerManifest = {
+                ...manifest,
+                fonts: updatedFonts,
+              };
+              onManifestChange?.(updatedManifest);
+            }
+          }}
         />
       )}
 

@@ -716,6 +716,7 @@ export function Wizard() {
             onChange={(placeholders) => change({ placeholders })}
             onRescan={handleRescan}
             onUseFlattenedFallback={handleUseFlattenedFallback}
+            onManifestChange={setManifest}
           />
         )}
 

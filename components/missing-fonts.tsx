@@ -3,9 +3,15 @@
 import { useState, useRef } from "react";
 import { Upload, ExternalLink, CheckCircle2, Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { createFontUploadUrl, finalizeFontUpload } from "@/lib/actions/fonts";
+import {
+  createFontUploadUrl,
+  finalizeFontUpload,
+  resolveGoogleFont,
+  saveResolvedFont,
+} from "@/lib/actions/fonts";
 import type { ManifestFont } from "@/lib/flyer/types";
 import { buildGoogleFontsCssUrl, normalizePostScriptFontName } from "@/lib/flyer/fonts";
+import { uploadFileWithFallback } from "@/lib/upload-helper";
 
 export interface MissingFontsProps {
   /** Missing fonts from the manifest (where missing === true) */
@@ -35,54 +41,96 @@ function useFontResolver(font: ManifestFont, eventId: string, onResolved?: (f: M
   async function checkGoogleFonts() {
     setState({ status: "checking" });
     try {
-      // Defensive: normalise PostScript names (e.g. "Roboto-Bold" → "Roboto" w700)
-      // in case an older manifest was stored before the slicer normalised on write.
       const norm = normalizePostScriptFontName(font.family);
       const lookupFamily = norm.family;
       const lookupWeight = font.weight ?? norm.weight;
-      const lookupStyle  = font.style  ?? norm.style;
+      const lookupStyle = font.style ?? norm.style;
 
-      const cssUrl = buildGoogleFontsCssUrl([
-        { family: lookupFamily, weight: lookupWeight, style: lookupStyle },
-      ]);
-      const res = await fetch(cssUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        },
-      });
-      if (!res.ok) { setState({ status: "not-found" }); return; }
-      const css = await res.text();
-      const match = css.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/);
-      if (match) {
-        setState({ status: "found", url: match[1] });
-      } else {
-        setState({ status: "not-found" });
+      // 1. Try server action first (avoids browser CORS & forbidden User-Agent header restrictions)
+      const serverRes = await resolveGoogleFont({
+        family: lookupFamily,
+        weight: lookupWeight,
+        style: lookupStyle,
+      }).catch(() => null);
+
+      if (serverRes?.ok && serverRes.data.url) {
+        setState({ status: "found", url: serverRes.data.url });
+        return;
       }
+
+      // 2. Fallback to client fetch without custom headers (modern browsers send desktop User-Agent automatically)
+      try {
+        const cssUrl = buildGoogleFontsCssUrl([
+          { family: lookupFamily, weight: lookupWeight, style: lookupStyle },
+        ]);
+        const res = await fetch(cssUrl);
+        if (res.ok) {
+          const css = await res.text();
+          const match = css.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/);
+          if (match) {
+            setState({ status: "found", url: match[1] });
+            return;
+          }
+        }
+      } catch {
+        // client fetch failed
+      }
+
+      setState({ status: "not-found" });
     } catch {
       setState({ status: "not-found" });
     }
   }
 
   async function linkGoogleFont(url: string) {
-    setState({ status: "uploading" }); // reuse uploading spinner
+    setState({ status: "uploading" });
     try {
-      // Normalise the family name on write too (defensive for old manifests)
       const norm = normalizePostScriptFontName(font.family);
-      onResolved?.({
+      const weight = font.weight ?? norm.weight;
+      const style = font.style ?? norm.style;
+
+      // 1. Permanently save to event fonts table and R2 manifest.json
+      const saveRes = await saveResolvedFont({
+        eventId,
+        family: norm.family,
+        weight,
+        style,
+        url,
+      });
+
+      if (!saveRes.ok) {
+        throw new Error(saveRes.error);
+      }
+
+      // 2. Immediately load into browser document.fonts so canvas & preview re-render with the font
+      if (typeof document !== "undefined" && "fonts" in document) {
+        try {
+          const face = new FontFace(norm.family, `url(${url})`, {
+            weight: String(weight ?? 400),
+            style: style ?? "normal",
+          });
+          await face.load();
+          document.fonts.add(face);
+        } catch (fontErr) {
+          console.warn("Could not register FontFace in document.fonts:", fontErr);
+        }
+      }
+
+      const updatedFont: ManifestFont = {
         ...font,
         family: norm.family,
-        weight: font.weight ?? norm.weight,
-        style: font.style ?? norm.style,
+        weight,
+        style,
         url,
         missing: false,
-      });
+      };
+
+      onResolved?.(updatedFont);
       setState({ status: "done" });
-      toast.success(`"${norm.family}" linked from Google Fonts.`);
-    } catch {
+      toast.success(`"${norm.family}" applied and saved.`);
+    } catch (err) {
       setState({ status: "not-found" });
-      toast.error("Failed to link Google Font.");
+      toast.error(err instanceof Error ? err.message : "Failed to link Google Font.");
     }
   }
 
@@ -101,28 +149,54 @@ function useFontResolver(font: ManifestFont, eventId: string, onResolved?: (f: M
       });
       if (!urlRes.ok) throw new Error(urlRes.error);
 
-      const putRes = await fetch(urlRes.data.uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": "font/otf" },
-      });
-      if (!putRes.ok) throw new Error("Upload failed: " + putRes.statusText);
+      // Upload with fallback to server-side upload proxy if direct R2 upload fails
+      await uploadFileWithFallback(
+        file,
+        urlRes.data.uploadUrl,
+        urlRes.data.key,
+        "public",
+        "font/otf"
+      );
 
+      const norm = normalizePostScriptFontName(font.family);
       const finRes = await finalizeFontUpload({
         eventId,
         key: urlRes.data.key,
         filename: file.name,
-        family: font.family,
-        weight: font.weight,
-        style: font.style,
+        family: norm.family,
+        weight: font.weight ?? norm.weight,
+        style: font.style ?? norm.style,
       });
       if (!finRes.ok) throw new Error(finRes.error);
 
-      // Build a public URL from the R2 key so the guest renderer can load it
       const publicUrl = `/api/public/assets/${urlRes.data.key}`;
-      onResolved?.({ ...font, url: publicUrl, missing: false });
+
+      // Immediately load into browser document.fonts
+      if (typeof document !== "undefined" && "fonts" in document) {
+        try {
+          const face = new FontFace(norm.family, `url(${publicUrl})`, {
+            weight: String(font.weight ?? norm.weight ?? 400),
+            style: font.style ?? norm.style ?? "normal",
+          });
+          await face.load();
+          document.fonts.add(face);
+        } catch (fontErr) {
+          console.warn("Could not register FontFace in document.fonts:", fontErr);
+        }
+      }
+
+      const updatedFont: ManifestFont = {
+        ...font,
+        family: norm.family,
+        weight: font.weight ?? norm.weight,
+        style: font.style ?? norm.style,
+        url: publicUrl,
+        missing: false,
+      };
+
+      onResolved?.(updatedFont);
       setState({ status: "done" });
-      toast.success(`"${font.family}" uploaded successfully.`);
+      toast.success(`"${norm.family}" uploaded and applied.`);
     } catch (err) {
       setState({ status: "not-found" });
       toast.error(err instanceof Error ? err.message : "Font upload failed.");

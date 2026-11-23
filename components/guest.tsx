@@ -403,7 +403,12 @@ export function Guest({
 
       <div className="dual">
         <div className="preview-bed">
-          <div className="flyer">
+          <div
+            className="flyer"
+            style={{
+              aspectRatio: manifest ? `${manifest.width} / ${manifest.height}` : undefined,
+            }}
+          >
             {/* Live rendered preview canvas */}
             <canvas
               ref={previewCanvasRef}
@@ -424,11 +429,6 @@ export function Guest({
                 src={event.artwork}
               />
             )}
-
-            <div className="stub">
-              <span>I WILL BE THERE</span>
-              <i aria-hidden="true" />
-            </div>
 
             {/* Read-only interactive click-to-focus placeholder zones */}
             {event.placeholders.map((p) => {
@@ -564,6 +564,8 @@ export function Guest({
                     name={p.key}
                     value={values[p.id] ?? ""}
                     onChange={(v) => fill(p.id, v)}
+                    defaultStyle={p.options.photoStyle ?? "flyer-match"}
+                    defaultBottomFade={p.options.bottomFade ?? 25}
                   />
                 </div>
               );

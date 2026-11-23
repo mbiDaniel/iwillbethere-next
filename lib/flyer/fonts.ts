@@ -137,17 +137,28 @@ export async function resolveGoogleFontUrl(
   style = "normal"
 ): Promise<string | null> {
   try {
-    const cssUrl = buildGoogleFontsCssUrl([{ family, weight, style }]);
-    // User-Agent trick: request woff2 by pretending to be a modern browser
-    const res = await fetch(cssUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-          "AppleWebKit/537.36 (KHTML, like Gecko) " +
-          "Chrome/120.0.0.0 Safari/537.36",
-      },
-    });
-    if (!res.ok) return null;
+    const headers =
+      typeof window === "undefined"
+        ? {
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+              "AppleWebKit/537.36 (KHTML, like Gecko) " +
+              "Chrome/120.0.0.0 Safari/537.36",
+          }
+        : undefined;
+
+    // 1. Try with specific weight/style
+    let cssUrl = buildGoogleFontsCssUrl([{ family, weight, style }]);
+    let res = await fetch(cssUrl, headers ? { headers } : undefined).catch(() => null);
+
+    // 2. If specific weight fails, try default family
+    if (!res || !res.ok) {
+      const cleanName = family.replace(/ /g, "+");
+      cssUrl = `https://fonts.googleapis.com/css2?family=${cleanName}&display=swap`;
+      res = await fetch(cssUrl, headers ? { headers } : undefined).catch(() => null);
+    }
+
+    if (!res || !res.ok) return null;
     const css = await res.text();
     // Extract first url(...) that ends in .woff2
     const match = css.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/);

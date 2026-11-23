@@ -106,29 +106,46 @@ export async function renderFlyer(
           1,
           Math.max(0.5, guestTextScales?.[p.id] ?? 1)
         );
-        const configuredFontSize =
-          p.options.fontSize ?? p.options.maxFontSize ?? baseStyle.fontSize;
-        const fontScale = (manifest.width / 340) * guestTextScale * scale;
+
+        // Determine target font size in full canvas coordinates:
+        // p.options.fontSize is configured in preview CSS pixels (relative to 340px width).
+        // If not explicitly configured, fall back to baseStyle font size from PSD.
+        let targetFontSize: number;
+        if (p.options.fontSize !== undefined) {
+          targetFontSize = (p.options.fontSize / 340) * manifest.width;
+        } else if (p.options.maxFontSize !== undefined) {
+          targetFontSize = (p.options.maxFontSize / 340) * manifest.width;
+        } else {
+          targetFontSize = baseStyle.fontSize;
+        }
+        targetFontSize = Math.round(targetFontSize * guestTextScale * scale);
+
+        const minimumFontSize = Math.max(
+          8,
+          Math.round(
+            (p.options.minFontSize !== undefined
+              ? (p.options.minFontSize / 340) * manifest.width
+              : targetFontSize * 0.4) * scale
+          )
+        );
+
         const scaledStyle = {
           ...baseStyle,
-          fontSize: Math.round(configuredFontSize * fontScale),
+          fontSize: targetFontSize,
           lineHeight: baseStyle.lineHeight
-            ? Math.round(baseStyle.lineHeight * fontScale)
+            ? Math.round(baseStyle.lineHeight * scale)
             : undefined,
           tracking: baseStyle.tracking
-            ? Math.round(baseStyle.tracking * fontScale)
+            ? Math.round(baseStyle.tracking * scale)
             : undefined,
         };
-        const minimumFontSize = p.options.fontSize
-          ? 6
-          : p.options.minFontSize ?? 6;
 
         const layout = fitTextToBox(valToUse, boxW, boxH, scaledStyle, {
           maxLines: p.options.maxLines,
           maxLength: p.options.maxLength,
           align: p.options.align,
-          minFontSize: Math.round(minimumFontSize * fontScale),
-          maxFontSize: Math.round(configuredFontSize * fontScale),
+          minFontSize: minimumFontSize,
+          maxFontSize: targetFontSize,
         });
 
         renderFittedText(ctx, layout, boxX, boxY, boxW, boxH, scaledStyle, {
@@ -159,6 +176,11 @@ export async function renderFlyer(
               fit: p.options.fit,
               framingMode: p.options.framingMode,
               focalPoint: p.options.focalPoint,
+              photoStyle: p.options.photoStyle,
+              bottomFade: p.options.bottomFade,
+              contrast: p.options.contrast,
+              brightness: p.options.brightness,
+              warmth: p.options.warmth,
             },
             maskBitmap
           );

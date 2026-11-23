@@ -36,6 +36,12 @@ export const placeholderOptionsSchema = z.object({
   framingMode: z.enum(["center", "top-center", "face-aware", "focal"]).optional(),
   focalPoint: z.object({ x: z.number(), y: z.number() }).optional(),
   sampleValue: z.string().optional(),
+  removeBackground: z.boolean().optional(),
+  photoStyle: z.enum(["none", "flyer-match", "warm-cinema", "studio", "dramatic-bw"]).optional(),
+  bottomFade: z.number().min(0).max(100).optional(),
+  contrast: z.number().min(50).max(200).optional(),
+  brightness: z.number().min(50).max(200).optional(),
+  warmth: z.number().min(-100).max(100).optional(),
 });
 
 export const placeholderTextStyleSchema = z.object({

@@ -104,14 +104,15 @@ export async function renderFlyer(
         );
         const configuredFontSize =
           p.options.fontSize ?? p.options.maxFontSize ?? baseStyle.fontSize;
+        const fontScale = (manifest.width / 340) * guestTextScale * scale;
         const scaledStyle = {
           ...baseStyle,
-          fontSize: Math.round(configuredFontSize * guestTextScale * scale),
+          fontSize: Math.round(configuredFontSize * fontScale),
           lineHeight: baseStyle.lineHeight
-            ? Math.round(baseStyle.lineHeight * guestTextScale * scale)
+            ? Math.round(baseStyle.lineHeight * fontScale)
             : undefined,
           tracking: baseStyle.tracking
-            ? Math.round(baseStyle.tracking * guestTextScale * scale)
+            ? Math.round(baseStyle.tracking * fontScale)
             : undefined,
         };
         const minimumFontSize = p.options.fontSize
@@ -122,8 +123,8 @@ export async function renderFlyer(
           maxLines: p.options.maxLines,
           maxLength: p.options.maxLength,
           align: p.options.align,
-          minFontSize: Math.round(minimumFontSize * guestTextScale * scale),
-          maxFontSize: Math.round(configuredFontSize * guestTextScale * scale),
+          minFontSize: Math.round(minimumFontSize * fontScale),
+          maxFontSize: Math.round(configuredFontSize * fontScale),
         });
 
         renderFittedText(ctx, layout, boxX, boxY, boxW, boxH, scaledStyle, {

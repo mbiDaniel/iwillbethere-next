@@ -130,18 +130,26 @@ export function PlaceholderOptionsPanel({
             [
               ["maxLines", "Max lines", 1, 4],
               ["maxLength", "Max characters", 1, 500],
-              ["minFontSize", "Min font size", 6, p.options.maxFontSize ?? 28],
-              ["maxFontSize", "Max font size", p.options.minFontSize ?? 9, 120],
+              ["fontSize", "Font size", 6, 120],
             ] as const
           ).map(([key, label, min, max]) => (
             <NumericTextInput
               key={`${p.id}-${key}`}
               label={label}
-              value={p.options[key] ?? min}
+              value={
+                p.options[key] ??
+                (key === "fontSize"
+                  ? p.options.maxFontSize ?? p.options.minFontSize ?? 28
+                  : min)
+              }
               min={min}
               max={max}
               integer
-              onCommit={(value) => opts({ [key]: value })}
+              onCommit={(value) =>
+                key === "fontSize"
+                  ? opts({ fontSize: value, minFontSize: undefined, maxFontSize: undefined })
+                  : opts({ [key]: value })
+              }
             />
           ))}
           <label>
@@ -342,8 +350,7 @@ export function PlaceholderList({
         maxLines: type === "text" ? 1 : undefined,
         maxLength: type === "text" ? 50 : undefined,
         align: "center",
-        minFontSize: 12,
-        maxFontSize: 32,
+        fontSize: 32,
         fallbackFont: "Arial",
         fit: type === "image" ? "cover" : undefined,
         useShapeAsMask,

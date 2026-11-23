@@ -138,6 +138,7 @@ export function FlyerPreview({
       {event.placeholders.map((p, i) => {
         const value = values[p.id] ?? (sample ? p.sampleValue : "");
         const b = p.box;
+        const fontSize = p.options.fontSize ?? p.options.maxFontSize ?? 28;
         return (
           <div
             key={p.id}
@@ -151,7 +152,7 @@ export function FlyerPreview({
                 p.type === "image" && p.options.useShapeAsMask ? "50%" : 0,
               textAlign: p.options.align,
               alignContent: "center",
-              fontSize: `clamp(${(p.options.minFontSize ?? 9) / 4}cqw,${Math.min((p.options.maxFontSize ?? 28) / 3.4, (95 * (p.options.maxLines ?? 1)) / Math.max(value?.length ?? 1, 1))}cqw,10cqw)`,
+              fontSize: `${Math.min(fontSize / 3.4, (95 * (p.options.maxLines ?? 1)) / Math.max(value?.length ?? 1, 1))}cqw`,
               fontFamily: p.options.fallbackFont,
               whiteSpace: (p.options.maxLines ?? 1) > 1 ? "normal" : "nowrap",
             }}

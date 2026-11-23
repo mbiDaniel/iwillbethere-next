@@ -178,6 +178,52 @@ describe("lib/flyer/slice & render integration", () => {
     expect(exportResult.height).toBe(800);
   });
 
+  it("reduces guest text size when a guest scale is applied", async () => {
+    const manifest: any = {
+      width: 200,
+      height: 80,
+      tiers: {
+        preview: { scale: 1, width: 200, height: 80, totalBytes: 0 },
+        full: { scale: 1, width: 200, height: 80, totalBytes: 0 },
+      },
+      items: [{ kind: "placeholder", placeholderId: "name" }],
+      placeholders: [
+        {
+          id: "name",
+          key: "NAME",
+          type: "text",
+          layerName: "NAME",
+          box: { x: 0, y: 0, w: 200, h: 80 },
+          options: { fontSize: 40, maxLines: 1 },
+          textStyle: { fontFamily: "sans-serif", fontSize: 40, color: "#ffffff" },
+        },
+      ],
+      fonts: [],
+      generator: { app: "test", psdLayerCount: 1, createdAt: new Date().toISOString() },
+    };
+    const context = {
+      manifest,
+      tier: "preview" as const,
+      assetBitmaps: new Map<string, any>(),
+      guestValues: { name: "DANIEL" },
+    };
+    const fullSize = await renderFlyer(context);
+    const reducedSize = await renderFlyer({
+      ...context,
+      guestTextScales: { name: 0.5 },
+    });
+    const countPaintedPixels = (canvas: ReturnType<typeof createCanvas>) => {
+      const { data } = canvas.getContext("2d").getImageData(0, 0, 200, 80);
+      let count = 0;
+      for (let index = 3; index < data.length; index += 4) {
+        if (data[index] > 0) count += 1;
+      }
+      return count;
+    };
+
+    expect(countPaintedPixels(reducedSize)).toBeLessThan(countPaintedPixels(fullSize));
+  });
+
   it("handles flattened fallback composite properly", async () => {
     const sliceResult = await slicePsd(validPsdBuffer);
     const fallback = await createFlattenedFallback(

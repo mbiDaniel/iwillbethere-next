@@ -33,6 +33,7 @@ export interface ExtractedPlaceholder {
     maxLines?: number;
     maxLength?: number;
     align?: "left" | "center" | "right";
+    fontSize?: number;
     minFontSize?: number;
     maxFontSize?: number;
     fallbackFont?: string;

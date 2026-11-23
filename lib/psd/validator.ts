@@ -140,7 +140,7 @@ export function validatePsd(
 
   for (const p of placeholders) {
     if (p.type === "text" && p.sampleValue && p.box.wPx) {
-      const minFont = p.options.minFontSize ?? 9;
+      const minFont = p.options.fontSize ?? p.options.minFontSize ?? 9;
       measureCtx.font = `${minFont}px sans-serif`;
       const metrics = measureCtx.measureText(p.sampleValue);
       const textWidth = metrics.width;

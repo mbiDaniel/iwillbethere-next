@@ -7,6 +7,7 @@ export const placeholderOptionsSchema = z.object({
   maxLines: z.number().int().min(1).max(10).optional(),
   maxLength: z.number().int().min(1).max(500).optional(),
   align: z.enum(["left", "center", "right"]).optional(),
+  fontSize: z.number().min(4).max(500).optional(),
   minFontSize: z.number().min(4).max(200).optional(),
   maxFontSize: z.number().min(4).max(500).optional(),
   fallbackFont: z.string().optional(),

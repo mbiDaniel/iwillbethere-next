@@ -77,8 +77,7 @@ export function getDefaultOptions(type: "text" | "image", key: string): Placehol
     align: "left",
     maxLines: 1,
     maxLength: 100,
-    minFontSize: 12,
-    maxFontSize: 48,
+    fontSize: 48,
     sampleValue: key.toLowerCase().includes("name") ? "Jamie Park" : `Sample ${key}`,
   };
 }

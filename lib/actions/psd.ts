@@ -1026,8 +1026,7 @@ export async function saveAllPlaceholders(
         align: "center",
         maxLines: 1,
         maxLength: 100,
-        minFontSize: 12,
-        maxFontSize: 36,
+        fontSize: 36,
       };
 
       if (existing) {

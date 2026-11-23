@@ -12,6 +12,7 @@ export interface RenderContext {
   guestValues: Record<string, string | CanvasInstance | ImageBitmap | HTMLImageElement | Blob>;
   // Options
   renderSamplesForEmpty?: boolean; // preview mode renders sampleValue; export doesn't unless filled
+  guestTextScales?: Record<string, number>;
 }
 
 export interface ExportResult {
@@ -31,7 +32,14 @@ export async function renderFlyer(
   context: RenderContext,
   targetCanvas?: CanvasInstance
 ): Promise<CanvasInstance> {
-  const { manifest, tier: tierName, assetBitmaps, guestValues, renderSamplesForEmpty } = context;
+  const {
+    manifest,
+    tier: tierName,
+    assetBitmaps,
+    guestValues,
+    renderSamplesForEmpty,
+    guestTextScales,
+  } = context;
   const tier = manifest.tiers[tierName];
   const scale = tier.scale;
 
@@ -90,22 +98,32 @@ export async function renderFlyer(
           color: "#ffffff",
         };
 
-        const guestTextScale = 1.2;
+        const guestTextScale = Math.min(
+          1,
+          Math.max(0.5, guestTextScales?.[p.id] ?? 1)
+        );
+        const configuredFontSize =
+          p.options.fontSize ?? p.options.maxFontSize ?? baseStyle.fontSize;
         const scaledStyle = {
           ...baseStyle,
-          fontSize: Math.round(baseStyle.fontSize * guestTextScale * scale),
-          lineHeight: baseStyle.lineHeight ? Math.round(baseStyle.lineHeight * scale) : undefined,
-          tracking: baseStyle.tracking ? Math.round(baseStyle.tracking * scale) : undefined,
+          fontSize: Math.round(configuredFontSize * guestTextScale * scale),
+          lineHeight: baseStyle.lineHeight
+            ? Math.round(baseStyle.lineHeight * guestTextScale * scale)
+            : undefined,
+          tracking: baseStyle.tracking
+            ? Math.round(baseStyle.tracking * guestTextScale * scale)
+            : undefined,
         };
+        const minimumFontSize = p.options.fontSize
+          ? 6
+          : p.options.minFontSize ?? 6;
 
         const layout = fitTextToBox(valToUse, boxW, boxH, scaledStyle, {
           maxLines: p.options.maxLines,
           maxLength: p.options.maxLength,
           align: p.options.align,
-          minFontSize: p.options.minFontSize ? Math.round(p.options.minFontSize * scale) : undefined,
-          maxFontSize: p.options.maxFontSize
-            ? Math.round(p.options.maxFontSize * guestTextScale * scale)
-            : undefined,
+          minFontSize: Math.round(minimumFontSize * guestTextScale * scale),
+          maxFontSize: Math.round(configuredFontSize * guestTextScale * scale),
         });
 
         renderFittedText(ctx, layout, boxX, boxY, boxW, boxH, scaledStyle, {

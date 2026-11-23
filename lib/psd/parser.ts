@@ -192,12 +192,24 @@ export function flattenLayerTree(
                 maxLines: 1,
                 maxLength: 40,
                 align: textStyle?.align || "left",
-                minFontSize: 9,
-                maxFontSize: textStyle?.fontSize || 28,
+                fontSize: textStyle?.fontSize || 28,
                 fallbackFont: "Arial",
               };
 
-        const options = prevOpts ? { ...defaultOptions, ...prevOpts } : defaultOptions;
+        const options = prevOpts
+          ? {
+              ...defaultOptions,
+              ...prevOpts,
+              ...(type === "text"
+                ? {
+                    fontSize:
+                      prevOpts.fontSize ??
+                      prevOpts.maxFontSize ??
+                      defaultOptions.fontSize,
+                  }
+                : {}),
+            }
+          : defaultOptions;
 
         const placeholder: ExtractedPlaceholder = {
           id: key.toLowerCase().replace(/[^a-z0-9_-]/g, "_") || `slot_${zCounter}`,

@@ -28,6 +28,7 @@ export const placeholderOptionsSchema = z.object({
   maxLines: z.number().int().positive().optional(),
   maxLength: z.number().int().positive().optional(),
   align: z.enum(["left", "center", "right"]).optional(),
+  fontSize: z.number().positive().optional(),
   minFontSize: z.number().positive().optional(),
   maxFontSize: z.number().positive().optional(),
   fit: z.enum(["cover", "contain"]).optional(),

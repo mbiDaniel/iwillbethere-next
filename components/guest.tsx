@@ -20,6 +20,7 @@ export function Guest({
   event?: Event | null;
 }) {
   const [values, set] = useState<Record<string, string>>({});
+  const [fontScales, setFontScales] = useState<Record<string, number>>({});
   const [generating, setGenerating] = useState(false);
   const [manifest, setManifest] = useState<FlyerManifest | null>(null);
   const [loadingManifest, setLoadingManifest] = useState(false);
@@ -236,19 +237,20 @@ export function Guest({
           tier: "preview",
           assetBitmaps: previewBitmapsRef.current,
           guestValues: guestBitmaps,
+          guestTextScales: fontScales,
           renderSamplesForEmpty: true,
         },
         canvas
       );
     });
-  }, [manifest, values]);
+  }, [manifest, values, fontScales]);
 
-  // Re-render when values change
+  // Re-render when values or text size change
   useEffect(() => {
-    if (manifest && previewBitmapsRef.current.size > 0) {
+    if (manifest) {
       scheduleRender();
     }
-  }, [values, manifest, scheduleRender]);
+  }, [values, fontScales, manifest, scheduleRender]);
 
   if (!event)
     return (
@@ -331,8 +333,9 @@ export function Guest({
         exportResult = await exportFlyer(
           {
             manifest,
-            assetBitmaps: exportAssetMap,
-            guestValues: guestExportValues,
+          assetBitmaps: exportAssetMap,
+          guestValues: guestExportValues,
+          guestTextScales: fontScales,
           },
           { format, quality: 0.92 }
         );
@@ -513,21 +516,48 @@ export function Guest({
             .sort(
               (a, b) => Number(a.type === "image") - Number(b.type === "image")
             )
-            .map((p) =>
-              p.type === "text" ? (
-                <label key={p.id} id={`field-${p.id}`}>
-                  {p.key}
-                  <input
-                    maxLength={p.options.maxLength ?? 40}
-                    placeholder={`Enter your ${p.key.toLowerCase()}`}
-                    value={values[p.id] ?? ""}
-                    onChange={(e) => fill(p.id, e.target.value)}
-                  />
-                  <small className="hint">
-                    {values[p.id]?.length ?? 0} / {p.options.maxLength ?? 40}{" "}
-                    characters
-                  </small>
-                </label>
+            .map((p) => {
+              const scalePercent = Math.round((fontScales[p.id] ?? 1) * 100);
+
+              return p.type === "text" ? (
+                <div key={p.id} id={`field-${p.id}`}>
+                  <label htmlFor={`guest-input-${p.id}`}>
+                    {p.key}
+                    <input
+                      id={`guest-input-${p.id}`}
+                      maxLength={p.options.maxLength ?? 40}
+                      placeholder={`Enter your ${p.key.toLowerCase()}`}
+                      value={values[p.id] ?? ""}
+                      onChange={(e) => fill(p.id, e.target.value)}
+                    />
+                    <small className="hint">
+                      {values[p.id]?.length ?? 0} / {p.options.maxLength ?? 40}{" "}
+                      characters
+                    </small>
+                  </label>
+                  <div className="text-scale-control">
+                    <div className="text-scale-heading">
+                      <label htmlFor={`guest-scale-${p.id}`}>Text size</label>
+                      <output htmlFor={`guest-scale-${p.id}`}>{scalePercent}%</output>
+                    </div>
+                    <input
+                      id={`guest-scale-${p.id}`}
+                      type="range"
+                      min={50}
+                      max={100}
+                      step={5}
+                      value={scalePercent}
+                      aria-label={`Text size for ${p.key}`}
+                      aria-valuetext={`${scalePercent}% of original size`}
+                      onChange={(e) =>
+                        setFontScales((previous) => ({
+                          ...previous,
+                          [p.id]: Number(e.target.value) / 100,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
               ) : (
                 <div key={p.id} id={`field-${p.id}`}>
                   <PhotoUploader
@@ -536,8 +566,8 @@ export function Guest({
                     onChange={(v) => fill(p.id, v)}
                   />
                 </div>
-              )
-            )}
+              );
+            })}
 
           <span className="hint bar-inline">
             <LockKeyhole size={15} /> Your name and photo stay on your device.

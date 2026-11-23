@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ChevronDown, PlusCircle, RotateCw, Trash2 } from "lucide-react";
 import { FlyerPreview } from "./flyer";
 import type { Event, Placeholder, PlaceholderOptions } from "@/lib/types";
@@ -10,6 +10,79 @@ import { FidelityCard } from "./flyer-fidelity";
 import { DownloadWeightCard } from "./download-weight";
 import { ValidationReport } from "./validation-report";
 import { FlyerManifest } from "@/lib/flyer/types";
+
+function NumericTextInput({
+  label,
+  value,
+  min,
+  max,
+  integer = false,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  integer?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const inputId = useId();
+  const [draft, setDraft] = useState(String(value));
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDraft(String(value));
+    setError("");
+  }, [value]);
+
+  function validateAndCommit() {
+    const trimmed = draft.trim();
+    const parsed = Number(trimmed);
+    const validNumber = /^-?(?:\d+\.?\d*|\.\d+)$/.test(trimmed) && Number.isFinite(parsed);
+    const validInteger = !integer || Number.isInteger(parsed);
+
+    if (!validNumber || !validInteger || parsed < min || parsed > max) {
+      setError(
+        integer
+          ? `Enter a whole number from ${min} to ${max}.`
+          : `Enter a number from ${min} to ${max}.`
+      );
+      return;
+    }
+
+    setError("");
+    setDraft(String(parsed));
+    onCommit(parsed);
+  }
+
+  return (
+    <label htmlFor={inputId}>
+      {label}
+      <input
+        id={inputId}
+        type="text"
+        inputMode={integer ? "numeric" : "decimal"}
+        value={draft}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${inputId}-error` : undefined}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError("");
+        }}
+        onBlur={validateAndCommit}
+      />
+      {error && (
+        <span
+          id={`${inputId}-error`}
+          role="alert"
+          style={{ color: "var(--danger)", fontSize: "0.82rem" }}
+        >
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}
 
 export function PlaceholderOptionsPanel({
   p,
@@ -55,25 +128,20 @@ export function PlaceholderOptionsPanel({
           {(
             [
               ["maxLines", "Max lines", 1, 4],
-              ["maxLength", "Max characters", 1, 160],
+              ["maxLength", "Max characters", 1, 500],
               ["minFontSize", "Min font size", 6, p.options.maxFontSize ?? 28],
-              ["maxFontSize", "Max font size", p.options.minFontSize ?? 9, 72],
+              ["maxFontSize", "Max font size", p.options.minFontSize ?? 9, 120],
             ] as const
           ).map(([key, label, min, max]) => (
-            <label key={key}>
-              {label}
-              <input
-                type="number"
-                min={min}
-                max={max}
-                value={p.options[key] ?? min}
-                onChange={(e) =>
-                  opts({
-                    [key]: Math.max(min, Math.min(max, Number(e.target.value))),
-                  })
-                }
-              />
-            </label>
+            <NumericTextInput
+              key={`${p.id}-${key}`}
+              label={label}
+              value={p.options[key] ?? min}
+              min={min}
+              max={max}
+              integer
+              onCommit={(value) => opts({ [key]: value })}
+            />
           ))}
           <label>
             Alignment
@@ -141,78 +209,38 @@ export function PlaceholderOptionsPanel({
             marginTop: "6px",
           }}
         >
-          <label>
-            X (%)
-            <input
-              type="number"
-              min={0}
-              max={95}
-              value={p.box?.x ?? 0}
-              onChange={(e) =>
-                update({
-                  ...p,
-                  box: {
-                    ...p.box,
-                    x: Math.max(0, Math.min(95, Number(e.target.value))),
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Y (%)
-            <input
-              type="number"
-              min={0}
-              max={95}
-              value={p.box?.y ?? 0}
-              onChange={(e) =>
-                update({
-                  ...p,
-                  box: {
-                    ...p.box,
-                    y: Math.max(0, Math.min(95, Number(e.target.value))),
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Width (%)
-            <input
-              type="number"
-              min={5}
-              max={100}
-              value={p.box?.w ?? 50}
-              onChange={(e) =>
-                update({
-                  ...p,
-                  box: {
-                    ...p.box,
-                    w: Math.max(5, Math.min(100, Number(e.target.value))),
-                  },
-                })
-              }
-            />
-          </label>
-          <label>
-            Height (%)
-            <input
-              type="number"
-              min={2}
-              max={100}
-              value={p.box?.h ?? 10}
-              onChange={(e) =>
-                update({
-                  ...p,
-                  box: {
-                    ...p.box,
-                    h: Math.max(2, Math.min(100, Number(e.target.value))),
-                  },
-                })
-              }
-            />
-          </label>
+          <NumericTextInput
+            key={`${p.id}-x`}
+            label="X (%)"
+            value={p.box?.x ?? 0}
+            min={0}
+            max={95}
+            onCommit={(x) => update({ ...p, box: { ...p.box, x } })}
+          />
+          <NumericTextInput
+            key={`${p.id}-y`}
+            label="Y (%)"
+            value={p.box?.y ?? 0}
+            min={0}
+            max={95}
+            onCommit={(y) => update({ ...p, box: { ...p.box, y } })}
+          />
+          <NumericTextInput
+            key={`${p.id}-width`}
+            label="Width (%)"
+            value={p.box?.w ?? 50}
+            min={5}
+            max={100}
+            onCommit={(w) => update({ ...p, box: { ...p.box, w } })}
+          />
+          <NumericTextInput
+            key={`${p.id}-height`}
+            label="Height (%)"
+            value={p.box?.h ?? 10}
+            min={2}
+            max={100}
+            onCommit={(h) => update({ ...p, box: { ...p.box, h } })}
+          />
         </div>
       </div>
 

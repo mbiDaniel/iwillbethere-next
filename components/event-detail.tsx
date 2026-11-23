@@ -10,6 +10,8 @@ import { PlaceholderList } from "./placeholders";
 import { FileDropzone } from "./files";
 import { DetailsFields } from "./wizard";
 import type { Event } from "@/lib/types";
+import { MissingFontsPanel } from "./missing-fonts";
+import type { ManifestFont } from "@/lib/flyer/types";
 import {
   updateEvent,
   deleteEvent,
@@ -33,9 +35,11 @@ import { uploadFileWithFallback } from "@/lib/upload-helper";
 export function EventDetail({
   id: _propId,
   initialEvent,
+  manifestFonts,
 }: {
   id?: string;
   initialEvent?: Event & { formatId?: string; validationIssues?: any[] };
+  manifestFonts?: ManifestFont[];
 }) {
   const router = useRouter();
   const [e, setEvent] = useState<
@@ -309,6 +313,13 @@ export function EventDetail({
             accept=".otf,.ttf,.woff2"
             onFile={handleFontUpload}
           />
+          {/* Missing fonts from PSD manifest — resolved via Google Fonts or upload */}
+          {manifestFonts && manifestFonts.length > 0 && (
+            <MissingFontsPanel
+              fonts={manifestFonts}
+              eventId={e.id}
+            />
+          )}
         </section>
       )}
 

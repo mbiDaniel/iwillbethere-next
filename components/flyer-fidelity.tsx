@@ -4,29 +4,136 @@ import { useState, useRef, useEffect } from "react";
 import { CheckCircle2, AlertTriangle, Eye, Split, Layers } from "lucide-react";
 import pixelmatch from "pixelmatch";
 import { createCanvas } from "@/lib/flyer/canvas";
+import { FlyerManifest } from "@/lib/flyer/types";
 
 export function FidelityCard({
   fidelityScore,
   compositeUrl,
   previewUrl,
+  manifest,
   warnings = [],
   onUseFlattenedFallback,
 }: {
   fidelityScore?: number | null;
   compositeUrl?: string | null;
   previewUrl?: string | null;
+  manifest?: FlyerManifest | null;
   warnings?: string[];
   onUseFlattenedFallback?: () => void;
 }) {
   const [showCompare, setShowCompare] = useState(false);
   const [compareMode, setCompareMode] = useState<"side-by-side" | "diff">("side-by-side");
   const diffCanvasRef = useRef<HTMLCanvasElement>(null);
+  const recomposedCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const scorePct = fidelityScore !== undefined && fidelityScore !== null ? Math.round(fidelityScore * 100) : 100;
   const isLowFidelity = scorePct < 85;
 
+  // Render full recomposited flyer on canvas from all slices
   useEffect(() => {
-    if (!showCompare || compareMode !== "diff" || !compositeUrl || !previewUrl) return;
+    if (!showCompare || !manifest) return;
+    let cancelled = false;
+
+    async function drawRecomposed() {
+      if (!recomposedCanvasRef.current || !manifest) return;
+      const targetCanvas = recomposedCanvasRef.current;
+      const w = 400;
+      const scale = w / manifest.width;
+      const h = Math.max(1, Math.round(manifest.height * scale));
+      targetCanvas.width = w;
+      targetCanvas.height = h;
+      const ctx = targetCanvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, w, h);
+
+      for (const item of manifest.items) {
+        if (cancelled) return;
+        if (item.kind === "slice") {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          await new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            img.src = item.assets.preview.url;
+          });
+          if (cancelled) return;
+          ctx.drawImage(
+            img,
+            Math.round(item.x * scale),
+            Math.round(item.y * scale),
+            Math.max(1, Math.round(item.w * scale)),
+            Math.max(1, Math.round(item.h * scale))
+          );
+        } else if (item.kind === "placeholder") {
+          const p = manifest.placeholders.find((dp) => dp.id === item.placeholderId);
+          if (p) {
+            ctx.save();
+            if (item.inheritedOpacity !== undefined) {
+              ctx.globalAlpha = item.inheritedOpacity;
+            }
+            if (p.type === "text" && p.textStyle) {
+              ctx.fillStyle = p.textStyle.color || "#ffffff";
+              const fontSize = Math.max(10, Math.round(p.textStyle.fontSize * scale));
+              ctx.font = `${p.textStyle.fontWeight ?? 400} ${fontSize}px sans-serif`;
+              ctx.textBaseline = "top";
+              ctx.fillText(
+                p.options.sampleValue || "Sample Text",
+                Math.round(p.box.x * scale),
+                Math.round(p.box.y * scale)
+              );
+            } else if (p.type === "image") {
+              ctx.fillStyle = "rgba(59, 130, 246, 0.4)";
+              ctx.fillRect(
+                Math.round(p.box.x * scale),
+                Math.round(p.box.y * scale),
+                Math.round(p.box.w * scale),
+                Math.round(p.box.h * scale)
+              );
+            }
+            ctx.restore();
+          }
+        }
+      }
+
+      // If diffMode is active, compare compositeUrl with this recomposed canvas
+      if (diffCanvasRef.current && compositeUrl) {
+        const compImg = new Image();
+        compImg.crossOrigin = "anonymous";
+        await new Promise<void>((resolve) => {
+          compImg.onload = () => resolve();
+          compImg.onerror = () => resolve();
+          compImg.src = compositeUrl;
+        });
+        if (cancelled || !diffCanvasRef.current) return;
+
+        const cA = createCanvas(w, h);
+        const ctxA = cA.getContext("2d");
+        ctxA.drawImage(compImg, 0, 0, w, h);
+        const dataA = ctxA.getImageData(0, 0, w, h).data;
+        const dataB = ctx.getImageData(0, 0, w, h).data;
+
+        const outCanvas = diffCanvasRef.current;
+        outCanvas.width = w;
+        outCanvas.height = h;
+        const outCtx = outCanvas.getContext("2d");
+        if (outCtx) {
+          const diffImgData = outCtx.createImageData(w, h);
+          pixelmatch(dataA, dataB, diffImgData.data, w, h, { threshold: 0.25 });
+          outCtx.putImageData(diffImgData, 0, 0);
+        }
+      }
+    }
+
+    drawRecomposed();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showCompare, compareMode, manifest, compositeUrl]);
+
+  // Fallback diff calculation if no manifest provided
+  useEffect(() => {
+    if (!showCompare || compareMode !== "diff" || manifest || !compositeUrl || !previewUrl) return;
 
     let cancelled = false;
     const imgA = new Image();
@@ -57,7 +164,7 @@ export function FidelityCard({
         const outCtx = outCanvas.getContext("2d");
         if (outCtx) {
           const diffImgData = outCtx.createImageData(w, h);
-          pixelmatch(dataA, dataB, diffImgData.data, w, h, { threshold: 0.15 });
+          pixelmatch(dataA, dataB, diffImgData.data, w, h, { threshold: 0.25 });
           outCtx.putImageData(diffImgData, 0, 0);
         }
       }
@@ -71,7 +178,7 @@ export function FidelityCard({
     return () => {
       cancelled = true;
     };
-  }, [showCompare, compareMode, compositeUrl, previewUrl]);
+  }, [showCompare, compareMode, manifest, compositeUrl, previewUrl]);
 
   return (
     <div
@@ -98,7 +205,7 @@ export function FidelityCard({
           </div>
         </div>
 
-        {compositeUrl && previewUrl && (
+        {compositeUrl && (previewUrl || manifest) && (
           <button
             type="button"
             className="btn secondary small"
@@ -151,7 +258,7 @@ export function FidelityCard({
         </div>
       )}
 
-      {showCompare && compositeUrl && previewUrl && (
+      {showCompare && compositeUrl && (previewUrl || manifest) && (
         <div
           className="panel stack"
           style={{
@@ -209,19 +316,34 @@ export function FidelityCard({
               </div>
               <div style={{ textAlign: "center" }}>
                 <span className="hint" style={{ fontWeight: 600 }}>Recomposited Flyer</span>
-                <img
-                  src={previewUrl}
-                  alt="Recomposited flyer"
-                  style={{
-                    width: "100%",
-                    maxHeight: "300px",
-                    objectFit: "contain",
-                    borderRadius: "6px",
-                    border: "1px solid var(--border)",
-                    marginTop: "6px",
-                    background: "#111",
-                  }}
-                />
+                {manifest ? (
+                  <canvas
+                    ref={recomposedCanvasRef}
+                    style={{
+                      width: "100%",
+                      maxHeight: "300px",
+                      objectFit: "contain",
+                      borderRadius: "6px",
+                      border: "1px solid var(--border)",
+                      marginTop: "6px",
+                      background: "#111",
+                    }}
+                  />
+                ) : (
+                  <img
+                    src={previewUrl ?? undefined}
+                    alt="Recomposited flyer"
+                    style={{
+                      width: "100%",
+                      maxHeight: "300px",
+                      objectFit: "contain",
+                      borderRadius: "6px",
+                      border: "1px solid var(--border)",
+                      marginTop: "6px",
+                      background: "#111",
+                    }}
+                  />
+                )}
               </div>
             </div>
           ) : (

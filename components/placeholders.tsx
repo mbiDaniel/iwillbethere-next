@@ -10,6 +10,7 @@ import { FidelityCard } from "./flyer-fidelity";
 import { DownloadWeightCard } from "./download-weight";
 import { ValidationReport } from "./validation-report";
 import { FlyerManifest } from "@/lib/flyer/types";
+import { MissingFontsPanel } from "./missing-fonts";
 
 export function PlaceholderOptionsPanel({
   p,
@@ -359,6 +360,7 @@ export function PlaceholderList({
         fidelityScore={effectiveFidelity}
         compositeUrl={compositeUrl}
         previewUrl={previewUrl || event.artwork}
+        manifest={manifest}
         warnings={manifest?.fidelity?.warnings}
         onUseFlattenedFallback={onUseFlattenedFallback}
       />
@@ -373,6 +375,14 @@ export function PlaceholderList({
 
       {/* Validation Report */}
       <ValidationReport issues={validationIssues} />
+
+      {/* Missing fonts from manifest */}
+      {manifest?.fonts && manifest.fonts.length > 0 && (
+        <MissingFontsPanel
+          fonts={manifest.fonts}
+          eventId={event.id}
+        />
+      )}
 
       {/* Re-scan controls */}
       <div className="fields panel row spread" style={{ alignItems: "center" }}>

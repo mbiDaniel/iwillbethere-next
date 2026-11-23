@@ -1,5 +1,6 @@
 import { createCanvas, canvasToBlob, CanvasInstance } from "./canvas";
 import { applyImageFitAndMask } from "./fit";
+import { loadFontsForManifest } from "./fonts";
 import { fitTextToBox, renderFittedText } from "./text";
 import { FlyerManifest, ManifestItem, ManifestPlaceholder, Tier } from "./types";
 
@@ -26,12 +27,19 @@ export const IOS_CANVAS_PIXEL_LIMIT = 16_777_216; // 16.7 megapixels
 
 /**
  * Renders the flyer at the specified tier onto a canvas.
+ * Automatically loads any fonts declared in the manifest (Google Fonts or
+ * custom-uploaded) before drawing text, so canvas ctx.font picks up the
+ * correct typeface.
  */
 export async function renderFlyer(
   context: RenderContext,
   targetCanvas?: CanvasInstance
 ): Promise<CanvasInstance> {
   const { manifest, tier: tierName, assetBitmaps, guestValues, renderSamplesForEmpty } = context;
+
+  // Load fonts declared in the manifest before any text is drawn.
+  // This is a no-op in Node/Worker environments where document.fonts is absent.
+  await loadFontsForManifest(manifest);
   const tier = manifest.tiers[tierName];
   const scale = tier.scale;
 

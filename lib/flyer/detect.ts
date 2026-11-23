@@ -27,6 +27,8 @@ export interface DetectedPlaceholder {
   layer: Layer;
   parentPath: string[];
   inheritedOpacity?: number;
+  /** Parent group mask (from a masked pass-through group) to use as the placeholder's shape mask */
+  shapeMask?: { mask: any; groupLeft: number; groupTop: number };
 }
 
 /**

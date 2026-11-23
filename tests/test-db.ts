@@ -17,10 +17,17 @@ export async function createTestDatabase() {
     setStorage(memoryStorage);
 
     const drizzleDir = path.join(process.cwd(), "drizzle");
-    const sqlFiles = fs
-      .readdirSync(drizzleDir)
-      .filter((file) => file.endsWith(".sql"))
-      .sort();
+    const journalPath = path.join(drizzleDir, "meta", "_journal.json");
+    let sqlFiles: string[] = [];
+    if (fs.existsSync(journalPath)) {
+      const journal = JSON.parse(fs.readFileSync(journalPath, "utf-8"));
+      sqlFiles = journal.entries.map((e: any) => `${e.tag}.sql`);
+    } else {
+      sqlFiles = fs
+        .readdirSync(drizzleDir)
+        .filter((file) => file.endsWith(".sql"))
+        .sort();
+    }
 
     for (const sqlFile of sqlFiles) {
       const sqlContent = fs.readFileSync(path.join(drizzleDir, sqlFile), "utf-8");
